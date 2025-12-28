@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <title>🎰 Fake Machine</title>
+  <title>🤖 Fake Machine</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -107,6 +107,7 @@
       background: linear-gradient(180deg, rgba(122,162,255,.18), rgba(122,162,255,.06));
     }
     .btn.ghost{background: transparent}
+    .btn.small{min-height:38px;padding:8px 10px;border-radius:10px;font-size:13px}
 
     .sheet{display:grid;grid-template-columns: repeat(4, minmax(0, 1fr));gap:10px;}
     @media (max-width: 640px){ .sheet{grid-template-columns: repeat(2, minmax(0, 1fr));} }
@@ -146,6 +147,51 @@
     svg{display:block;width:100%;height:auto}
     .hint{margin-top:10px;color: rgba(154,166,178,.85);font-size:12px;line-height:1.2;user-select:none;}
     .msg{margin-top:10px;font-size:12px;color: var(--muted);user-select:none;}
+
+    /* Advanced settings modal */
+    .modalBack{
+      position:fixed;inset:0;
+      background: rgba(0,0,0,.55);
+      display:none;
+      align-items:flex-end;
+      justify-content:center;
+      padding:14px;
+      z-index:9999;
+    }
+    .modal{
+      width:min(760px,100%);
+      border:1px solid rgba(255,255,255,.14);
+      border-radius: 18px;
+      background: rgba(12,16,22,.96);
+      box-shadow: 0 20px 60px rgba(0,0,0,.55);
+      overflow:hidden;
+    }
+    .modalHead{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      padding:12px 12px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+    }
+    .modalTitle{font-weight:900;font-size:14px;letter-spacing:.2px;}
+    .modalBody{padding:12px}
+    .modalRow{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      padding:10px 10px;border:1px solid rgba(255,255,255,.08);
+      border-radius:14px;background: rgba(0,0,0,.22);
+      margin-bottom:10px;
+    }
+    .modalRow .name{font-size:13px;color: rgba(233,238,246,.92);font-weight:800}
+    .reorderBtns{display:flex;gap:8px}
+    .gearBtn{
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      border-radius: 12px;
+      min-height: 38px;
+      padding:8px 10px;
+      cursor:pointer;
+      color: var(--ink);
+      display:inline-flex;align-items:center;gap:8px;
+    }
   </style>
 </head>
 <body>
@@ -154,7 +200,7 @@
     <div class="header">
       <div class="headerTop">
         <div>
-          <h1>🎰 Fake Machine</h1>
+          <h1>🤖 Fake Machine</h1>
           <div class="sub">random jazz charts · band · keyboard display</div>
         </div>
         <div style="min-width:220px; width:min(420px,100%);">
@@ -175,20 +221,55 @@
       <div class="msg" id="msg">Tip: tap a bar to focus the piano + band on that chord (and play it).</div>
     </div>
 
-    <!-- Controls -->
-    <section class="card">
+    <!-- MOVED UP: LEAD SHEET -->
+    <section class="card" id="cardLead">
       <div class="cardHead">
-        <div class="title">Controls</div>
-        <div class="title">⚙️</div>
+        <div class="title">Lead sheet</div>
+        <div class="title" id="leadKey">—</div>
       </div>
       <div class="cardBody">
-        <div class="controls">
-          <div class="control">
+        <div class="sheet" id="sheet"></div>
+      </div>
+    </section>
+
+    <!-- MOVED UP: PIANO -->
+    <section class="card" id="cardPiano">
+      <div class="cardHead">
+        <div class="title">🎹</div>
+        <div class="title" id="pianoTop">—</div>
+      </div>
+      <div class="cardBody">
+        <div class="legend">
+          <span class="dotLegend"><span class="sw scale"></span>Scale tones</span>
+          <span class="dotLegend"><span class="sw root"></span>Root</span>
+          <span class="dotLegend"><span class="sw chord"></span>Chord tones</span>
+        </div>
+        <div class="pianoBox">
+          <svg id="pianoSvg" viewBox="0 0 1000 240" preserveAspectRatio="none" aria-label="Piano keyboard"></svg>
+        </div>
+        <div class="hint" id="pianoHint">—</div>
+      </div>
+    </section>
+
+    <!-- Controls (moved down) -->
+    <section class="card" id="cardControls">
+      <div class="cardHead">
+        <div class="title">Controls</div>
+        <button class="gearBtn" id="btnGear" aria-label="Advanced settings" title="Advanced settings">
+          ⚙️ <span style="font-size:12px;color:var(--muted);">Advanced</span>
+        </button>
+      </div>
+      <div class="cardBody">
+        <div class="controls" id="controlsGrid">
+          <div class="control" data-ctl="generate">
             <label>Generate</label>
-            <button class="btn primary" id="btnGenerate">Generate</button>
+            <div class="inline" style="gap:2px">
+              <button class="btn primary small" id="btnGenerate" style="flex:1">🎰</button>
+              <button class="btn small" id="btnRandom" style="flex:1">🎲</button>
+            </div>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="bars">
             <label>Length</label>
             <select id="barsSel">
               <option value="8" selected>8 bars</option>
@@ -197,7 +278,7 @@
             </select>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="tempo">
             <label>Tempo</label>
             <div class="inline">
               <input id="tempo" type="range" min="60" max="220" value="120">
@@ -205,7 +286,7 @@
             </div>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="swing">
             <label>Swing</label>
             <div class="inline">
               <input id="swing" type="range" min="50" max="75" value="60">
@@ -213,7 +294,7 @@
             </div>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="chaos">
             <label>Chaos</label>
             <div class="inline">
               <input id="chaos" type="range" min="0" max="100" value="50">
@@ -221,7 +302,7 @@
             </div>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="rootMode">
             <label>Root mode</label>
             <select id="rootMode">
               <option value="keyed" selected>Keyed</option>
@@ -231,7 +312,7 @@
             </select>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="bandMode">
             <label>Band mode</label>
             <select id="bandMode">
               <option value="comp" selected>Comp</option>
@@ -242,7 +323,7 @@
             </select>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="bassPreset">
             <label>Bass sound</label>
             <select id="bassPreset">
               <option value="upright" selected>Upright</option>
@@ -252,7 +333,7 @@
             </select>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="keysPreset">
             <label>Keys sound</label>
             <select id="keysPreset">
               <option value="ep" selected>EP</option>
@@ -262,7 +343,7 @@
             </select>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="drumsPreset">
             <label>Drums sound</label>
             <select id="drumsPreset">
               <option value="jazz" selected>Jazz kit</option>
@@ -272,7 +353,7 @@
             </select>
           </div>
 
-          <div class="control">
+          <div class="control" data-ctl="drumsLevel">
             <label>Drums level</label>
             <div class="inline">
               <input id="drumsLevel" type="range" min="0" max="100" value="55">
@@ -283,11 +364,11 @@
       </div>
     </section>
 
-    <!-- CHORD LIMITERS -->
-    <section class="card">
+    <!-- CHORD LIMITERS (moved down) -->
+    <section class="card" id="cardLimiters">
       <div class="cardHead">
         <div class="title">Chord limiters</div>
-        <div class="title">🎲</div>
+        <div class="title">🧩</div>
       </div>
       <div class="cardBody">
         <div class="limitGrid">
@@ -326,51 +407,37 @@
           </div>
         </div>
 
-        <div class="msg" style="margin-top:12px;">
-         🤖
-        </div>
-      </div>
-    </section>
-
-    <!-- LEAD SHEET -->
-    <section class="card">
-      <div class="cardHead">
-        <div class="title">Lead sheet</div>
-        <div class="title" id="leadKey">—</div>
-      </div>
-      <div class="cardBody">
-        <div class="sheet" id="sheet"></div>
-      </div>
-    </section>
-
-    <!-- PIANO -->
-    <section class="card">
-      <div class="cardHead">
-        <div class="title">🎹</div>
-        <div class="title" id="pianoTop">—</div>
-      </div>
-      <div class="cardBody">
-        <div class="legend">
-          <span class="dotLegend"><span class="sw scale"></span>Scale tones</span>
-          <span class="dotLegend"><span class="sw root"></span>Root</span>
-          <span class="dotLegend"><span class="sw chord"></span>Chord tones</span>
-        </div>
-        <div class="pianoBox">
-          <svg id="pianoSvg" viewBox="0 0 1000 240" preserveAspectRatio="none" aria-label="Piano keyboard"></svg>
-        </div>
-        <div class="hint" id="pianoHint">—</div>
+        <div class="msg" style="margin-top:12px;">🎶</div>
       </div>
     </section>
 
   </div>
 
+  <!-- Advanced Settings Modal -->
+  <div class="modalBack" id="advBack" role="dialog" aria-modal="true" aria-label="Advanced settings">
+    <div class="modal">
+      <div class="modalHead">
+        <div class="modalTitle">Advanced settings</div>
+        <div class="reorderBtns">
+          <button class="btn small" id="btnResetMenu">Reset</button>
+          <button class="btn primary small" id="btnCloseAdv">Done</button>
+        </div>
+      </div>
+      <div class="modalBody">
+        <div class="msg" style="margin:0 0 10px 0;">Menu order (Controls grid). More advanced stuff can live here later.</div>
+        <div id="orderList"></div>
+      </div>
+    </div>
+  </div>
+
 <script>
 /* =========================================================
-   - Tap a chord => plays that chord immediately (preview)
-   - Drums: more jazz ride + cymbal (swingy 8ths, hat chicks)
-   - Tight sync: UI updates happen on bar-start (no "next chord early")
-   - Default: 8 bars, only maj7/m7/7/dim7
-   - Chord-local scale per chord (E7 => E Mixolydian, etc.)
+   FIXES + UPDATES:
+   ✅ Bug fix: after Play -> Pause, tapping chords still previews sound
+      (previously it only "jumped" because isPlaying stayed true)
+   ✅ Random button: randomizes ALL settings + chord limiters, then generates
+   ✅ Layout: Lead sheet + Piano moved under header; controls/limiters moved down
+   ✅ Gear icon: opens Advanced Settings modal to reorder Controls menu tiles
    ========================================================= */
 
 const NOTE_NAMES = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
@@ -472,6 +539,13 @@ function getChordLimiterState(){
     tSlash: document.getElementById("tSlash").checked,
     tChrom: document.getElementById("tChrom").checked,
   };
+}
+
+function setChordLimiterState(s){
+  for (const k of Object.keys(s)){
+    const el = document.getElementById(k);
+    if (el && el.type === "checkbox") el.checked = !!s[k];
+  }
 }
 
 function buildQualityOptions(limit){
@@ -675,6 +749,7 @@ const els = {
   pianoHint: document.getElementById("pianoHint"),
 
   btnGenerate: document.getElementById("btnGenerate"),
+  btnRandom: document.getElementById("btnRandom"),
   btnCopy: document.getElementById("btnCopy"),
   btnPlay: document.getElementById("btnPlay"),
 
@@ -693,6 +768,14 @@ const els = {
   drumsPreset: document.getElementById("drumsPreset"),
   drumsLevel: document.getElementById("drumsLevel"),
   drumsLevelNum: document.getElementById("drumsLevelNum"),
+
+  controlsGrid: document.getElementById("controlsGrid"),
+  btnGear: document.getElementById("btnGear"),
+
+  advBack: document.getElementById("advBack"),
+  orderList: document.getElementById("orderList"),
+  btnCloseAdv: document.getElementById("btnCloseAdv"),
+  btnResetMenu: document.getElementById("btnResetMenu"),
 };
 
 let state = {
@@ -725,6 +808,7 @@ function setHeaderLine(){
   els.leadKey.textContent = line;
 }
 
+/* ============== Lead sheet ============== */
 function renderSheet(){
   els.sheet.innerHTML = "";
   state.chart.forEach((ch,i)=>{
@@ -732,19 +816,23 @@ function renderSheet(){
     div.className = "bar" + (i===state.activeIndex ? " active" : "");
     div.innerHTML = `<div class="sym">${chordName(ch)}</div><div class="num">${i+1}</div>`;
 
-    // Tap => focus + update piano + (preview play chord immediately when not actively running)
+    // ✅ FIX: when paused, still preview chord (previously would "jump" and not play)
     div.addEventListener("click", async ()=>{
       state.activeIndex = i;
       renderSheet();
       updatePianoForActive();
 
-      // If playing, jump transport (audio+UI stay locked)
-      if (player.isPlaying){
+      const target = state.chart[i];
+
+      if (player.isPlaying && !player.isPaused){
         player.jumpToBar(i);
-        els.msg.textContent = `Jumped to: ${chordName(ch)}`;
+        els.msg.textContent = `Jumped to: ${chordName(target)}`;
       } else {
-        await player.previewChord(state.chart[i]); // plays chord when you tap
-        els.msg.textContent = `Preview: ${chordName(ch)}`;
+        // if paused OR stopped: preview should always work
+        // also set the resume bar when paused so playback continues from here
+        if (player.isPlaying && player.isPaused) player.setResumeBar(i);
+        await player.previewChord(target);
+        els.msg.textContent = `Preview: ${chordName(target)}`;
       }
     });
 
@@ -931,8 +1019,8 @@ function updatePianoForActive(){
                     (mode==="locrian") ? "Locrian" : mode;
 
   const chordScaleName = `${noteName(ch.root)} ${modeLabel}`;
-  document.getElementById("pianoTop").textContent = chordScaleName;
-  document.getElementById("pianoHint").textContent = `${chordName(ch)} · scale: ${chordScaleName}`;
+  els.pianoTop.textContent = chordScaleName;
+  els.pianoHint.textContent = `${chordName(ch)} · scale: ${chordScaleName}`;
 }
 
 /* Copy chart */
@@ -964,15 +1052,15 @@ function linkRangeAndNumber(rangeEl, numEl, onChange){
   });
 }
 
-linkRangeAndNumber(document.getElementById("tempo"), document.getElementById("tempoNum"), (v)=>{
+linkRangeAndNumber(els.tempo, els.tempoNum, (v)=>{
   state.tempo = v|0; syncMeta();
   if (player.isPlaying) player.setTempo(state.tempo, state.swing);
 });
-linkRangeAndNumber(document.getElementById("swing"), document.getElementById("swingNum"), (v)=>{
+linkRangeAndNumber(els.swing, els.swingNum, (v)=>{
   state.swing = v|0; syncMeta();
   if (player.isPlaying) player.setTempo(state.tempo, state.swing);
 });
-linkRangeAndNumber(document.getElementById("chaos"), document.getElementById("chaosNum"), (v)=>{
+linkRangeAndNumber(els.chaos, els.chaosNum, (v)=>{
   state.chaos = v|0;
   const macro = macroToWeights(state.chaos);
   for (const k of Object.keys(macro)){
@@ -980,31 +1068,19 @@ linkRangeAndNumber(document.getElementById("chaos"), document.getElementById("ch
   }
   syncMeta();
 });
-linkRangeAndNumber(document.getElementById("drumsLevel"), document.getElementById("drumsLevelNum"), (v)=>{
+linkRangeAndNumber(els.drumsLevel, els.drumsLevelNum, (v)=>{
   player.setDrumsLevel((v|0)/100);
 });
 
-document.getElementById("barsSel").addEventListener("change", ()=>{ state.bars = Number(document.getElementById("barsSel").value); syncMeta(); });
-document.getElementById("rootMode").addEventListener("change", ()=>{ state.rootMode = document.getElementById("rootMode").value; });
-document.getElementById("bandMode").addEventListener("change", ()=>{ state.bandMode = document.getElementById("bandMode").value; if (player.isPlaying) player.setBandMode(state.bandMode); });
+els.barsSel.addEventListener("change", ()=>{ state.bars = Number(els.barsSel.value); syncMeta(); });
+els.rootMode.addEventListener("change", ()=>{ state.rootMode = els.rootMode.value; });
+els.bandMode.addEventListener("change", ()=>{ state.bandMode = els.bandMode.value; if (player.isPlaying) player.setBandMode(state.bandMode); });
 
-document.getElementById("bassPreset").addEventListener("change", ()=> player.setPresets(
-  document.getElementById("bassPreset").value,
-  document.getElementById("keysPreset").value,
-  document.getElementById("drumsPreset").value
-));
-document.getElementById("keysPreset").addEventListener("change", ()=> player.setPresets(
-  document.getElementById("bassPreset").value,
-  document.getElementById("keysPreset").value,
-  document.getElementById("drumsPreset").value
-));
-document.getElementById("drumsPreset").addEventListener("change", ()=> player.setPresets(
-  document.getElementById("bassPreset").value,
-  document.getElementById("keysPreset").value,
-  document.getElementById("drumsPreset").value
-));
+els.bassPreset.addEventListener("change", ()=> player.setPresets(els.bassPreset.value, els.keysPreset.value, els.drumsPreset.value));
+els.keysPreset.addEventListener("change", ()=> player.setPresets(els.bassPreset.value, els.keysPreset.value, els.drumsPreset.value));
+els.drumsPreset.addEventListener("change", ()=> player.setPresets(els.bassPreset.value, els.keysPreset.value, els.drumsPreset.value));
 
-document.getElementById("btnCopy").addEventListener("click", copyChart);
+els.btnCopy.addEventListener("click", copyChart);
 
 function renderAll(){
   syncMeta();
@@ -1037,12 +1113,191 @@ function generateAndRender(){
   }
 }
 
-document.getElementById("btnGenerate").addEventListener("click", generateAndRender);
+els.btnGenerate.addEventListener("click", generateAndRender);
 
 ["qMaj7","qMin7","qDom7","qDim7","qHalfDim","qSus","x9","x11","x13","x6","tAlt","tSlash","tChrom"]
   .forEach(id=>{
     document.getElementById(id).addEventListener("change", ()=> generateAndRender());
   });
+
+/* ========= Randomize everything ========= */
+function randomizeAllSettings(){
+  // bars
+  const barsChoices = [8,16,32];
+  state.bars = pick(barsChoices);
+
+  // tempo / swing / chaos
+  state.tempo = rint(70, 210);
+  state.swing = rint(52, 72);
+  state.chaos = rint(0, 100);
+
+  // modes
+  state.rootMode = pick(["keyed","drifting","orbiting","freefall"]);
+  state.bandMode = pick(["comp","ballad","modal","free","broken"]);
+
+  // presets
+  els.bassPreset.value = pick(["upright","round","sub","pluck"]);
+  els.keysPreset.value = pick(["ep","piano","organ","pad"]);
+  els.drumsPreset.value = pick(["jazz","brushes","tight","lofi"]);
+  const dl = rint(25, 85);
+  els.drumsLevel.value = dl;
+  els.drumsLevelNum.value = dl;
+
+  // chord limiters (random, but keep it musically sane)
+  const lim = {
+    qMaj7: chance(0.85),
+    qMin7: chance(0.85),
+    qDom7: chance(0.85),
+    qDim7: chance(0.55),
+    qHalfDim: chance(0.45),
+    qSus: chance(0.40),
+
+    x9: chance(0.55),
+    x11: chance(0.25),
+    x13: chance(0.35),
+    x6: chance(0.35),
+
+    tAlt: chance(0.30),
+    tSlash: chance(0.30),
+    tChrom: chance(0.30),
+  };
+
+  // ensure at least one core quality
+  if (!lim.qMaj7 && !lim.qMin7 && !lim.qDom7 && !lim.qDim7 && !lim.qHalfDim && !lim.qSus){
+    lim.qDom7 = true;
+  }
+
+  // push into UI
+  els.barsSel.value = String(state.bars);
+
+  els.tempo.value = state.tempo;
+  els.tempoNum.value = state.tempo;
+
+  els.swing.value = state.swing;
+  els.swingNum.value = state.swing;
+
+  els.chaos.value = state.chaos;
+  els.chaosNum.value = state.chaos;
+
+  els.rootMode.value = state.rootMode;
+  els.bandMode.value = state.bandMode;
+
+  setChordLimiterState(lim);
+
+  // update derived weights (reset to macro for new chaos)
+  state.weights = macroToWeights(state.chaos);
+
+  // update audio presets + level right away
+  player.setPresets(els.bassPreset.value, els.keysPreset.value, els.drumsPreset.value);
+  player.setDrumsLevel((Number(els.drumsLevel.value)||55)/100);
+
+  syncMeta();
+  generateAndRender();
+  els.msg.textContent = "Randomized everything.";
+}
+els.btnRandom.addEventListener("click", randomizeAllSettings);
+
+/* ========= Advanced settings: reorder controls ========= */
+const DEFAULT_CTL_ORDER = ["generate","bars","tempo","swing","chaos","rootMode","bandMode","bassPreset","keysPreset","drumsPreset","drumsLevel"];
+const CTL_LABELS = {
+  generate:"Generate",
+  bars:"Length",
+  tempo:"Tempo",
+  swing:"Swing",
+  chaos:"Chaos",
+  rootMode:"Root mode",
+  bandMode:"Band mode",
+  bassPreset:"Bass sound",
+  keysPreset:"Keys sound",
+  drumsPreset:"Drums sound",
+  drumsLevel:"Drums level"
+};
+
+function getCtlOrder(){
+  try{
+    const raw = localStorage.getItem("fm_ctl_order");
+    if (!raw) return DEFAULT_CTL_ORDER.slice();
+    const arr = JSON.parse(raw);
+    // validate
+    const set = new Set(DEFAULT_CTL_ORDER);
+    const cleaned = arr.filter(x=>set.has(x));
+    // add any missing
+    for (const x of DEFAULT_CTL_ORDER) if (!cleaned.includes(x)) cleaned.push(x);
+    return cleaned;
+  }catch{
+    return DEFAULT_CTL_ORDER.slice();
+  }
+}
+function setCtlOrder(order){
+  localStorage.setItem("fm_ctl_order", JSON.stringify(order));
+}
+
+function applyCtlOrder(order){
+  const grid = els.controlsGrid;
+  const nodes = new Map();
+  [...grid.querySelectorAll("[data-ctl]")].forEach(n=>{
+    nodes.set(n.getAttribute("data-ctl"), n);
+  });
+  // append in requested order
+  for (const key of order){
+    const node = nodes.get(key);
+    if (node) grid.appendChild(node);
+  }
+}
+
+function renderOrderModal(){
+  const order = getCtlOrder();
+  els.orderList.innerHTML = "";
+  order.forEach((key, idx)=>{
+    const row = document.createElement("div");
+    row.className = "modalRow";
+    row.innerHTML = `
+      <div class="name">${idx+1}. ${CTL_LABELS[key] || key}</div>
+      <div class="reorderBtns">
+        <button class="btn small" data-act="up" data-key="${key}">↑</button>
+        <button class="btn small" data-act="down" data-key="${key}">↓</button>
+      </div>
+    `;
+    els.orderList.appendChild(row);
+  });
+
+  els.orderList.querySelectorAll("button[data-act]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const act = btn.getAttribute("data-act");
+      const key = btn.getAttribute("data-key");
+      const cur = getCtlOrder();
+      const i = cur.indexOf(key);
+      if (i < 0) return;
+      if (act==="up" && i>0){
+        [cur[i-1], cur[i]] = [cur[i], cur[i-1]];
+      } else if (act==="down" && i<cur.length-1){
+        [cur[i+1], cur[i]] = [cur[i], cur[i+1]];
+      }
+      setCtlOrder(cur);
+      renderOrderModal();
+      applyCtlOrder(cur);
+    });
+  });
+}
+
+function openAdv(){
+  renderOrderModal();
+  els.advBack.style.display = "flex";
+}
+function closeAdv(){
+  els.advBack.style.display = "none";
+}
+
+els.btnGear.addEventListener("click", openAdv);
+els.btnCloseAdv.addEventListener("click", closeAdv);
+els.advBack.addEventListener("click", (e)=>{
+  if (e.target === els.advBack) closeAdv();
+});
+els.btnResetMenu.addEventListener("click", ()=>{
+  setCtlOrder(DEFAULT_CTL_ORDER.slice());
+  renderOrderModal();
+  applyCtlOrder(getCtlOrder());
+});
 
 /* Band player */
 const player = (() => {
@@ -1063,7 +1318,6 @@ const player = (() => {
   function beatSec(){ return 60/tempo; }
   function swingRatio(){
     const s = clamp(swing,50,75);
-    // 50 => straight (0.5), 75 => heavy swing (~0.70)
     return clamp(0.5 + (s-50)*(0.20/25), 0.5, 0.70);
   }
 
@@ -1211,11 +1465,9 @@ const player = (() => {
   function playDrums(t0, kind, accent=1.0){
     const g = ctx.createGain(); g.gain.value = 0.0001;
 
-    // "more jazz" defaults (ride-forward)
     let hatCut=12000, snCut=7000, rideCut=11000;
     let snAmp=0.10, hatAmp=0.06, kickAmp=0.10, rideAmp=0.075;
 
-    // small preset tweaks
     if (drumsPreset === "brushes"){
       rideCut=9000; snCut=5200;
       rideAmp=0.055; snAmp=0.075; hatAmp=0.05; kickAmp=0.07;
@@ -1249,7 +1501,6 @@ const player = (() => {
     }
 
     if (kind === "ride"){
-      // ping + wash (more cymbal presence)
       const ping = ctx.createOscillator(); ping.type="sine";
       ping.frequency.setValueAtTime(1750 + Math.random()*120, t);
       const pg = ctx.createGain(); pg.gain.value = 0.0001;
@@ -1293,66 +1544,50 @@ const player = (() => {
     }
   }
 
-  function addAudio(e){
-    audioEvents.push(e);
-  }
-  function addUI(e){
-    uiEvents.push(e);
-  }
+  function addAudio(e){ audioEvents.push(e); }
+  function addUI(e){ uiEvents.push(e); }
   function sortQueues(){
     audioEvents.sort((a,b)=>a.t-b.t);
     uiEvents.sort((a,b)=>a.t-b.t);
   }
 
-  // jazz ride pattern with swingy 8ths + hat chicks on 2&4 + comp
   function scheduleBar(ch, tBar, idx){
     const beat = beatSec();
     const barLen = beat*4;
-    const sr = swingRatio(); // where the "and" sits within each beat
+    const sr = swingRatio();
 
-    // UI update EXACTLY on bar start
     addUI({t:tBar, kind:"ui", idx});
 
-    // bass: 4-on-the-floor walkish (still simple)
     const bassTimes=[tBar, tBar+beat, tBar+beat*2, tBar+beat*3];
     for (const tt of bassTimes) addAudio({t:tt, kind:"bass", midi:bassMidiForChord(ch)});
 
-    // keys comp: 2 stabs per bar
     const compTimes=[tBar+beat*1 + beat*0.03, tBar+beat*3 + beat*0.03];
     const voiced = voicingForChord(ch);
     for (const tt of compTimes) addAudio({t:tt, kind:"keys", mids:voiced});
 
-    // DRUMS (more cymbals)
-    // ride: 8th note swing pattern (ding-ding-da-ding feel)
     for (let b=0;b<4;b++){
       const down = tBar + beat*b;
       const and  = down + beat*sr;
-      // accent 2 and 4 slightly
       const accDown = (b===1 || b===3) ? 1.15 : 1.0;
       const accAnd  = 0.85;
 
       addAudio({t:down, kind:"drum", drum:"ride", accent:accDown});
       addAudio({t:and,  kind:"drum", drum:"ride", accent:accAnd});
 
-      // occasional skip / extra tick for jazziness
       if (chance(0.18)) addAudio({t:down + beat*0.75, kind:"drum", drum:"ride", accent:0.55});
     }
 
-    // hat chicks on 2 & 4
     addAudio({t:tBar+beat*1, kind:"drum", drum:"hat", accent:1.15});
     addAudio({t:tBar+beat*3, kind:"drum", drum:"hat", accent:1.15});
 
-    // feathered kick
     if (chance(0.75)) addAudio({t:tBar, kind:"drum", drum:"kick", accent:0.55});
     if (chance(0.55)) addAudio({t:tBar+beat*2, kind:"drum", drum:"kick", accent:0.55});
     if (chance(0.22)) addAudio({t:tBar+beat*0.5, kind:"drum", drum:"kick", accent:0.40});
 
-    // snare comp (mostly light)
     if (chance(0.45)) addAudio({t:tBar+beat*1 + beat*sr, kind:"drum", drum:"snare", accent:0.55});
     if (chance(0.35)) addAudio({t:tBar+beat*2 + beat*0.25, kind:"drum", drum:"snare", accent:0.45});
     if (chance(0.28)) addAudio({t:tBar+beat*3 + beat*sr, kind:"drum", drum:"snare", accent:0.55});
 
-    // occasional crash at phrase starts (bar 1, 5, 9...) / or when jumping
     if (idx % 4 === 0 && chance(0.30)) addAudio({t:tBar, kind:"drum", drum:"crash", accent:0.75});
 
     return tBar + barLen;
@@ -1373,7 +1608,6 @@ const player = (() => {
     while (uiEvents.length && uiEvents[0].t <= tNow){
       const e = uiEvents.shift();
       if (e.kind === "ui"){
-        // This is the ONLY place the "current chord" advances while playing
         state.activeIndex = e.idx;
         renderSheet();
         updatePianoForActive();
@@ -1386,11 +1620,9 @@ const player = (() => {
     const tNow = now();
     if (startTime===0) startTime = tNow + 0.05;
 
-    // schedule far enough ahead
     while (startTime < tNow + lookahead*2){
       const idx = currentBar % chart.length;
       const ch = chart[idx];
-
       startTime = scheduleBar(ch, startTime, idx);
       currentBar++;
     }
@@ -1424,6 +1656,8 @@ const player = (() => {
   function togglePause(){
     if (!isPlaying) return;
     isPaused = !isPaused;
+
+    // If resuming, clear queues and start from "currentBar" (kept updated by setResumeBar/jumpToBar)
     if (!isPaused){
       audioEvents=[]; uiEvents=[];
       startTime = now() + 0.05;
@@ -1449,20 +1683,20 @@ const player = (() => {
     startTime = now() + 0.05;
   }
 
-  // NEW: play the tapped chord immediately (works when not playing)
+  // ✅ NEW: when paused, tapping should set where playback resumes from (without breaking preview)
+  function setResumeBar(i){
+    currentBar = i;
+  }
+
   async function previewChord(ch){
     ensure();
     await ctx.resume();
     if (!ch) return;
 
     const t0 = now() + 0.01;
-
-    // little "band hit": keys voicing + bass, tiny ride tick
     const voiced = voicingForChord(ch);
     playKeys(voiced, t0);
     playBass(bassMidiForChord(ch), t0);
-
-    // short cymbal tick so it feels responsive (optional)
     playDrums(t0, "ride", 0.75);
   }
 
@@ -1476,19 +1710,20 @@ const player = (() => {
     get isPlaying(){return isPlaying;},
     get isPaused(){return isPaused;},
     start, stop, togglePause, jumpToBar,
+    setResumeBar,
     previewChord,
     setTempo:setTempoFn, setBandMode:setBandModeFn, setChart:setChartFn, setPresets, setDrumsLevel
   };
 })();
 
-document.getElementById("btnPlay").addEventListener("click", async ()=>{
+els.btnPlay.addEventListener("click", async ()=>{
   if (!player.isPlaying){
     await player.start();
-    document.getElementById("btnPlay").textContent = "Pause";
+    els.btnPlay.textContent = "Pause";
     els.msg.textContent = "Band on.";
   } else {
     player.togglePause();
-    document.getElementById("btnPlay").textContent = player.isPaused ? "Play" : "Pause";
+    els.btnPlay.textContent = player.isPaused ? "Play" : "Pause";
     els.msg.textContent = player.isPaused ? "Paused." : "Playing.";
   }
 });
@@ -1496,21 +1731,20 @@ document.getElementById("btnPlay").addEventListener("click", async ()=>{
 document.addEventListener("visibilitychange", ()=>{
   if (document.hidden && player.isPlaying){
     player.stop();
-    document.getElementById("btnPlay").textContent = "Play";
+    els.btnPlay.textContent = "Play";
     els.msg.textContent = "Stopped (tab hidden).";
   }
 });
 
 /* Init */
 function setPresetsFromUI(){
-  player.setPresets(
-    document.getElementById("bassPreset").value,
-    document.getElementById("keysPreset").value,
-    document.getElementById("drumsPreset").value
-  );
-  player.setDrumsLevel((Number(document.getElementById("drumsLevel").value)||55)/100);
+  player.setPresets(els.bassPreset.value, els.keysPreset.value, els.drumsPreset.value);
+  player.setDrumsLevel((Number(els.drumsLevel.value)||55)/100);
 }
- 
+
+/* Apply saved control order on load */
+applyCtlOrder(getCtlOrder());
+
 renderPianoBase();
 syncMeta();
 setPresetsFromUI();
