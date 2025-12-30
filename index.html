@@ -1085,6 +1085,16 @@
 
     const limit = clamp(Number(state.scalesUsed)||1, 1, Math.max(1, Object.keys(SCALES).length));
 
+    // Single-scale hard clamp: force all chords to key root/mode
+    if (limit===1 && SCALES[state.keyMode]){
+      const rootPc = pc(state.keyRoot);
+      for (const slot of slots){
+        slot.chord.mode = state.keyMode;
+        slot.chord.scaleRoot = rootPc;
+      }
+      return;
+    }
+
     // collect candidate modes per chord (root fixed to chord root)
     const modeTotals = new Map();
     const candPer = slots.map((slot, idx)=>{
@@ -1100,28 +1110,20 @@
       return cand.length ? cand : [{mode:"mixo", score:0, center:pc(chord.root), id:`${pc(chord.root)}:mixo`}];
     });
 
-    const paletteWeights = [...modeTotals.entries()]
-      .map(([id,total])=>({id,total}))
-      .sort((a,b)=>b.total - a.total);
-
-    const palette = new Set();
-    const weightMap = new Map(modeTotals);
-
-    function lowestPaletteId(){
-      let lowId=null, low=Infinity;
-      palette.forEach(id=>{
-        const w = weightMap.get(id)||-Infinity;
-        if (w < low){ low = w; lowId = id; }
-      });
-      return lowId;
+    // fixed palette: top-N root+mode combos across chart
+    const paletteEntries = [...modeTotals.entries()]
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0, limit);
+    if (paletteEntries.length===0 && slots.length){
+      paletteEntries.push([`${pc(slots[0].chord.root)}:mixo`, 0]);
     }
+    const palette = new Set(paletteEntries.map(([id])=>id));
 
     for (let i=0;i<slots.length;i++){
       const cand = candPer[i];
-
-      // try palette candidate first
       let chosen = null;
       let best = -1e9;
+      // first, best candidate within palette (same root+mode)
       for (const c of cand){
         if (palette.has(c.id) && c.score>best){
           best = c.score;
@@ -1130,23 +1132,13 @@
       }
 
       if (!chosen){
-        // use best candidate for this chord
-        const bestCand = cand.reduce((m,c)=> c.score>(m?.score??-Infinity)?c:m, cand[0]);
-
-        if (palette.size < limit){
-          palette.add(bestCand.id);
-        } else {
-          const lowId = lowestPaletteId();
-          if (!palette.has(bestCand.id)){
-            palette.delete(lowId);
-            palette.add(bestCand.id);
-          }
-        }
-        chosen = bestCand;
+        // fallback to this chord's best candidate (root fixed)
+        chosen = cand.reduce((m,c)=> c.score>(m?.score??-Infinity)?c:m, cand[0]);
       }
 
       slots[i].chord.mode = chosen.mode || "mixo";
-      slots[i].chord.scaleRoot = pc(slots[i].chord.root);
+      const centerRoot = (chosen && typeof chosen.center==="number") ? chosen.center : pc(slots[i].chord.root);
+      slots[i].chord.scaleRoot = pc(centerRoot);
     }
   }
 
@@ -1175,8 +1167,8 @@
     drumsFill: 40,
     scalesUsed: 8,
     limiter: {
-      qMaj7:true, qMin7:true, qDom7:true, qDim7:true,
-      qHalfDim:false, qSus:false, qMinMaj:false,
+      qMaj7:true, qMin7:true, qDom7:true, qDim7:false,
+      qHalfDim:true, qSus:false, qMinMaj:false,
       x9:false, x11:false, x13:false, x6:false, xAdd9:false, xSharp11:false, xMin11:false,
       tAlt:false, tSlash:false, tChrom:false, tB9:false, tSharp9:false,
     },
@@ -2804,7 +2796,7 @@
     state.keyMode = pick(["ionian","dorian","mixolydian","aeolian","lydian"]);
   }
 
-  function stepRoot(prevRoot, weights){
+  function stepRoot(prevRoot, weights, allowedSet=null){
     // functional gravity: favor 5th motion when functional is high
     const f = clamp(weights.functional,0,100)/100;
     const rc = clamp(weights.rootChaos,0,100)/100;
@@ -2818,15 +2810,23 @@
       {v: pc(prevRoot - 1), w: 2 + 10*rc},
       {v: rint(0,11), w: 1 + 18*rc}
     ];
-    return weightedPick(opts);
+    const filtered = allowedSet ? opts.filter(o=>allowedSet.has(pc(o.v))) : opts;
+    return weightedPick(filtered.length ? filtered : opts);
   }
 
-  function chooseQuality(limit, weights){
+  function chooseQuality(limit, weights, scaleSet=null, chordRoot=null){
     const base = buildQualityOptions(limit);
     const qc = clamp(weights.qualityChaos,0,100)/100;
     const t  = clamp(weights.tension,0,100)/100;
+    const rootPc = chordRoot!=null ? pc(chordRoot) : null;
     // tilt toward more colorful when chaos/tension higher
-    return weightedPick(base.map(o=>{
+    const filtered = base.filter(o=>{
+      if (!scaleSet || rootPc==null) return true;
+      const tones = (CHORDS[o.v.symbol] || []).map(iv=>pc(rootPc + iv));
+      return tones.every(p=>scaleSet.has(p));
+    });
+    const pool = filtered.length ? filtered : base;
+    return weightedPick(pool.map(o=>{
       let w = o.w;
       if (o.v.family==="dom" && (o.v.symbol.includes("b9")||o.v.symbol.includes("sharp9"))) w *= (1 + 1.2*t);
       if (o.v.symbol.includes("9") || o.v.symbol.includes("11") || o.v.symbol.includes("13")) w *= (1 + 0.6*qc);
@@ -2882,6 +2882,17 @@
 
     chooseKeyCenter();
 
+    const singleScale = (state.scalesUsed===1 && SCALES[state.keyMode])
+      ? new Set(SCALES[state.keyMode].map(i=>pc(state.keyRoot+i)))
+      : null;
+    const ensureInScale = (r)=>{
+      if (!singleScale) return pc(r);
+      const rp = pc(r);
+      if (singleScale.has(rp)) return rp;
+      const arr=[...singleScale];
+      return arr.length ? arr[0] : rp;
+    };
+
     // weights influenced by chaos + progressionLogic
     let w = macroToWeights(state.chaos);
     const logic = PROGRESSION_LOGICS[state.progressionLogic] || PROGRESSION_LOGICS.jazzFunctional;
@@ -2893,7 +2904,7 @@
     const limit = state.limiter;
 
     const bars = [];
-    let root = pc(state.keyRoot);
+    let root = ensureInScale(state.keyRoot);
 
     // controlled “center drift”: allow only N center changes, spread across bars
     const driftBudget = clamp(Number(state.scalesUsed)||8, 1, 32);
@@ -2910,15 +2921,15 @@
         // occasional drift
         const driftChance = clamp(w.rootChaos,0,100)/100 * 0.30 + (b>0 && (b-lastDriftAt)>3 ? 0.07 : 0);
         if (driftLeft>0 && chance(driftChance)){
-          root = pc(rint(0,11));
+          root = ensureInScale(rint(0,11));
           driftLeft--;
           lastDriftAt = b;
         } else {
-          root = pc(stepRoot(root, w));
+          root = ensureInScale(stepRoot(root, w, singleScale));
         }
 
         // pick quality (tied to limiters)
-        const q = chooseQuality(limit, w);
+        const q = chooseQuality(limit, w, singleScale, root);
         let ch = makeChord(root, q);
 
         // more “jazz” feeling: nudge dom chords toward ii-V-ish by biasing a ii before V
@@ -3319,8 +3330,8 @@
     lim.qMaj7 = chance(0.85);
     lim.qMin7 = chance(0.85);
     lim.qDom7 = chance(0.85);
-    lim.qDim7 = chance(0.35);
-    lim.qHalfDim = chance(0.35);
+    lim.qDim7 = chance(0.20);
+    lim.qHalfDim = chance(0.65);
     lim.qSus = chance(0.25);
     lim.qMinMaj = chance(0.20);
 
