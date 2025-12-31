@@ -1036,6 +1036,7 @@
     melodicMinor:[0,2,3,5,7,9,11],
     lydianDom:[0,2,4,6,7,9,10],
     altered:[0,1,3,4,6,8,10],
+    harmonicMinor:[0,2,3,5,7,8,11],
   };
 
   const CHORDS = {
@@ -1111,7 +1112,8 @@
       return hasSharp11Dom ? ["lydianDom","mixo","altered"] : ["mixo","lydianDom","altered"];
     }
     if (ch.family === "sus") return ["mixo","dorian"];
-    if (ch.family === "hdim" || ch.family === "dim") return ["locrian"];
+    if (ch.family === "hdim") return ["locrian"];
+    if (ch.family === "dim") return ["harmonicMinor","locrian"];
     return ["mixo"];
   }
 
@@ -1137,6 +1139,7 @@
     if (mode==="altered") score += 0.2;
     if (mode==="lydianDom") score += 0.4;
     if (mode==="melodicMinor") score += 0.8;
+    if (mode==="harmonicMinor") score += 0.6;
 
     const chordPCs = chordTonesPCs(ch);
     if (chordPCs.includes(pc(ch.root+6))){
@@ -1187,6 +1190,7 @@
       if (ch.family==="min") return ["dorian","aeolian"];
       if (ch.family==="sus") return ["mixo"];
       if (ch.family==="minmaj") return ["melodicMinor","dorian"];
+      if (ch.family==="dim") return ["harmonicMinor","locrian"];
     }
     return base;
   }
