@@ -31,6 +31,12 @@
       --good:#3fe18b;    /* root marker */
       --chord:#b67cff;   /* chord marker */
 
+      --fretWood:#2a1a12;
+      --fretLine: rgba(255,255,255,.20);
+      --fretLineStrong: rgba(255,255,255,.55);
+      --fretInlay: rgba(255,255,255,.65);
+      --stringColor: rgba(255,255,255,.70);
+
       --keyWhite:#f2f5fb;
       --keyBlack:#161b23;
       --keyBorder:#c9d3e2;
@@ -94,7 +100,7 @@
     @keyframes morphMove{
       0%   { background-position: 0% 20%; transform: translate3d(-18px,-12px,0) scale(1.06); }
       50%  { background-position: 100% 60%; transform: translate3d(22px,16px,0) scale(1.1); }
-      100% { background-position: 15% 90%; transform: translate3d(-10px,20px,0) scale(1.08); }
+      100% { background-position: 0% 20%; transform: translate3d(-18px,-12px,0) scale(1.06); }
     }
 
     button, input, select, label {font:inherit}
@@ -149,6 +155,28 @@
     .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
     .btnRow{display:flex;gap:8px;flex-wrap:wrap}
     .btnRow .btn{flex:1;min-width:120px}
+
+    .iconBtn{
+      min-height:30px;
+      min-width:32px;
+      padding:4px 6px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.20);
+      color: var(--pageInk);
+      display:inline-flex;align-items:center;justify-content:center;
+      cursor:pointer;user-select:none;
+    }
+    .iconBtn.on{
+      border-color: rgba(63,225,139,.45);
+      background: linear-gradient(180deg, rgba(63,225,139,.14), rgba(0,0,0,.12));
+    }
+    .fretBox{
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:16px;
+      background: var(--fretWood);
+      overflow:hidden;
+    }
 
     /* Title bar button alignment */
     #cardHeader .btnRow{justify-content:center;}
@@ -414,7 +442,10 @@
     <!-- PIANO -->
     <section class="card" id="cardPiano" data-section="piano">
       <div class="cardHead">
-        <div class="title">🎹</div>
+        <div class="row" style="gap:6px;align-items:center;">
+          <button class="iconBtn" id="btnPianoToggle" type="button" aria-label="Show piano view" title="Show piano view">🎹</button>
+          <button class="iconBtn" id="btnFretToggle" type="button" aria-label="Show fretboard view" title="Show fretboard view">🎸</button>
+        </div>
         <div class="title" id="pianoTop">—</div>
       </div>
       <div class="cardBody">
@@ -423,8 +454,11 @@
           <span class="dotLegend"><span class="sw root"></span>Root</span>
           <span class="dotLegend"><span class="sw chord"></span>Chord</span>
         </div>
-        <div class="pianoBox">
+        <div class="pianoBox" id="pianoBox">
           <svg id="pianoSvg" viewBox="0 0 1000 240" preserveAspectRatio="none" aria-label="Piano keyboard"></svg>
+        </div>
+        <div class="fretBox" id="fretBox" style="display:none;">
+          <svg id="fretSvg" viewBox="0 0 1000 240" preserveAspectRatio="none" aria-label="Guitar fretboard"></svg>
         </div>
         <div class="hint" id="pianoHint">—</div>
       </div>
@@ -867,6 +901,17 @@
           <div class="miniCtl">
             <label>Piano theme</label>
             <select id="pianoTheme"></select>
+          </div>
+          <div class="miniCtl">
+            <label>Fretboard theme</label>
+            <select id="fretTheme"></select>
+          </div>
+          <div class="miniCtl">
+            <label>Fretboard layout</label>
+            <label class="chip" style="width:100%;justify-content:space-between;margin:0;">
+              <span>Left-handed view</span>
+              <input type="checkbox" id="fretLefty">
+            </label>
           </div>
           <div class="miniCtl">
             <label>Tone markers</label>
@@ -1453,6 +1498,9 @@
     pageTheme: "terminal",
     pianoTheme: "classic",
     markerStyle: "dots",
+    viewMode: "piano",
+    fretTheme: "rosewood",
+    fretLefty: false,
     morphBg: true,
     kbOct: 2, /* 2 octaves = 14 white keys (default) */
   };
@@ -1492,6 +1540,9 @@
     pageTheme: DEFAULTS.pageTheme,
     pianoTheme: DEFAULTS.pianoTheme,
     markerStyle: DEFAULTS.markerStyle,
+    viewMode: DEFAULTS.viewMode,
+    fretTheme: DEFAULTS.fretTheme,
+    fretLefty: DEFAULTS.fretLefty,
     morphBg: DEFAULTS.morphBg,
     kbOct: DEFAULTS.kbOct,
     allowedCenters: [],
@@ -1522,6 +1573,8 @@
     btnRedo: document.getElementById("btnRedo"),
     btnCopy: document.getElementById("btnCopy"),
     btnDefaults: document.getElementById("btnDefaults"),
+    btnPianoToggle: document.getElementById("btnPianoToggle"),
+    btnFretToggle: document.getElementById("btnFretToggle"),
 
     btnEdit: document.getElementById("btnEdit"),
     editHint: document.getElementById("editHint"),
@@ -1543,6 +1596,9 @@
     leadKey: document.getElementById("leadKey"),
 
     pianoSvg: document.getElementById("pianoSvg"),
+    pianoBox: document.getElementById("pianoBox"),
+    fretBox: document.getElementById("fretBox"),
+    fretSvg: document.getElementById("fretSvg"),
     pianoTop: document.getElementById("pianoTop"),
     pianoHint: document.getElementById("pianoHint"),
     markerStyle: document.getElementById("markerStyle"),
@@ -1591,6 +1647,8 @@
 
     pageTheme: document.getElementById("pageTheme"),
     pianoTheme: document.getElementById("pianoTheme"),
+    fretTheme: document.getElementById("fretTheme"),
+    fretLefty: document.getElementById("fretLefty"),
 
     advBack: document.getElementById("advBack"),
     btnGear: document.getElementById("btnGear"),
@@ -2254,6 +2312,13 @@
     pastel:{ name:"Pastel", vars:{ "--accent":"#6aa8ff","--good":"#6ff0c8","--chord":"#ff7fcf","--keyWhite":"#f7fbff","--keyBlack":"#141826","--keyBorder":"rgba(255,255,255,.25)","--keyBlackBorder":"rgba(255,255,255,.12)","--keyBorderStrong":"rgba(0,0,0,.34)" } },
   };
 
+  const FRET_THEMES = {
+    rosewood:{ name:"Rosewood", vars:{ "--fretWood":"#3a2418", "--fretLine":"rgba(255,255,255,.18)", "--fretLineStrong":"rgba(255,255,255,.45)", "--fretInlay":"rgba(255,255,255,.55)", "--stringColor":"rgba(255,255,255,.70)" } },
+    maple:{ name:"Maple", vars:{ "--fretWood":"#e6d4b2", "--fretLine":"rgba(0,0,0,.18)", "--fretLineStrong":"rgba(0,0,0,.48)", "--fretInlay":"rgba(255,255,255,.75)", "--stringColor":"rgba(255,255,255,.75)" } },
+    ebony:{ name:"Ebony", vars:{ "--fretWood":"#0d0f13", "--fretLine":"rgba(255,255,255,.20)", "--fretLineStrong":"rgba(255,255,255,.55)", "--fretInlay":"rgba(255,255,255,.60)", "--stringColor":"rgba(255,255,255,.75)" } },
+    seafoam:{ name:"Seafoam", vars:{ "--fretWood":"#0f1f20", "--fretLine":"rgba(120,255,214,.30)", "--fretLineStrong":"rgba(120,255,214,.55)", "--fretInlay":"rgba(160,255,230,.65)", "--stringColor":"rgba(200,255,240,.75)" } },
+  };
+
   function initPianoThemeDropdown(){
     E.pianoTheme.innerHTML = "";
     for (const [id,t] of Object.entries(PIANO_THEMES)){
@@ -2264,11 +2329,28 @@
     }
   }
 
+  function initFretThemeDropdown(){
+    E.fretTheme.innerHTML = "";
+    for (const [id,t] of Object.entries(FRET_THEMES)){
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = t.name;
+      E.fretTheme.appendChild(opt);
+    }
+  }
+
   function applyPianoTheme(id){
     const t = PIANO_THEMES[id] || PIANO_THEMES.classic;
     for (const k of Object.keys(t.vars)) document.documentElement.style.setProperty(k, t.vars[k]);
     state.pianoTheme = id;
     try{ localStorage.setItem("fm_piano_theme", id); }catch{}
+  }
+
+  function applyFretTheme(id){
+    const t = FRET_THEMES[id] || FRET_THEMES.rosewood;
+    for (const k of Object.keys(t.vars)) document.documentElement.style.setProperty(k, t.vars[k]);
+    state.fretTheme = id;
+    try{ localStorage.setItem("fm_fret_theme", id); }catch{}
   }
 
   function applyMorphBg(on){
@@ -2427,7 +2509,213 @@
     svg.appendChild(tri);
   }
 
+  function placeScaleMarker(svg, cx, cy){
+    const style = state.markerStyle || "dots";
+    const fillVar = "var(--accent)";
+    const stroke = "rgba(0,0,0,.55)";
+
+    if (style==="dots"){
+      const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+      c.setAttribute("cx", String(cx));
+      c.setAttribute("cy", String(cy));
+      c.setAttribute("r", "7");
+      c.setAttribute("fill", fillVar);
+      c.setAttribute("stroke", stroke);
+      c.setAttribute("stroke-width", "1.2");
+      svg.appendChild(c);
+      return;
+    }
+    if (style==="rings"){
+      const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+      c.setAttribute("cx", String(cx));
+      c.setAttribute("cy", String(cy));
+      c.setAttribute("r", "8");
+      c.setAttribute("fill", fillVar);
+      c.setAttribute("stroke", "rgba(255,255,255,.7)");
+      c.setAttribute("stroke-width", "2");
+      svg.appendChild(c);
+      return;
+    }
+    if (style==="squares"){
+      const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
+      r.setAttribute("x", String(cx-7));
+      r.setAttribute("y", String(cy-7));
+      r.setAttribute("width", "14");
+      r.setAttribute("height", "14");
+      r.setAttribute("rx", "4");
+      r.setAttribute("fill", fillVar);
+      r.setAttribute("stroke", stroke);
+      r.setAttribute("stroke-width", "1.2");
+      svg.appendChild(r);
+      return;
+    }
+    const tri = document.createElementNS("http://www.w3.org/2000/svg","path");
+    tri.setAttribute("d", `M ${cx} ${cy-8} L ${cx-8} ${cy+7} L ${cx+8} ${cy+7} Z`);
+    tri.setAttribute("fill", fillVar);
+    tri.setAttribute("stroke", stroke);
+    tri.setAttribute("stroke-width", "1.2");
+    svg.appendChild(tri);
+  }
+
+  function renderFretboardForActive(){
+    const ch = activeChord();
+    if (!ch){
+      E.fretSvg.innerHTML = "";
+      E.pianoTop.textContent = "—";
+      E.pianoHint.textContent = "—";
+      return;
+    }
+
+    const prev = (state.activeBar>0) ? (state.chartBars[state.activeBar-1]?.chords?.slice(-1)[0] || null) : null;
+    const next = (state.activeBar<state.chartBars.length-1) ? (state.chartBars[state.activeBar+1]?.chords?.[0] || null) : null;
+
+    const {pcs: scalePCs, mode} = scalePCsForChordLocal(ch, prev, next);
+    const scaleSet = new Set(scalePCs);
+    const chordSet = new Set(chordTonesPCs(ch));
+    const scaleRoot = (ch && typeof ch.scaleRoot==="number") ? ch.scaleRoot : ch.root;
+
+    E.pianoTop.textContent = chordName(ch);
+    E.pianoHint.textContent = `Fretboard: EADGBE · ${noteName(scaleRoot)} ${mode}`;
+
+    const svg = E.fretSvg;
+    svg.innerHTML = "";
+
+    const W = 1000;
+    const H = 240;
+    const frets = 12;
+    const space = W / frets;
+    const marginY = 22;
+    const stringGap = (H - marginY*2) / 5;
+    const nutWidth = Math.max(6, space * 0.18);
+    const openX = Math.max(nutWidth * 0.6, space * 0.2);
+
+    const bg = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    bg.setAttribute("x", "0");
+    bg.setAttribute("y", "0");
+    bg.setAttribute("width", String(W));
+    bg.setAttribute("height", String(H));
+    bg.setAttribute("fill", "var(--fretWood)");
+    svg.appendChild(bg);
+
+    for (let i=0;i<=frets;i++){
+      const x = i * space;
+      const line = document.createElementNS("http://www.w3.org/2000/svg","line");
+      line.setAttribute("x1", String(x));
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y1", "0");
+      line.setAttribute("y2", String(H));
+      line.setAttribute("stroke", i===0 ? "var(--fretLineStrong)" : "var(--fretLine)");
+      line.setAttribute("stroke-width", i===0 ? "4" : "2");
+      svg.appendChild(line);
+    }
+
+    const nut = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    nut.setAttribute("x", "0");
+    nut.setAttribute("y", "0");
+    nut.setAttribute("width", String(nutWidth));
+    nut.setAttribute("height", String(H));
+    nut.setAttribute("fill", "var(--fretLineStrong)");
+    nut.setAttribute("opacity", "0.65");
+    svg.appendChild(nut);
+
+    const inlays = [3,5,7,9,12];
+    for (const f of inlays){
+      const x = (f - 0.5) * space;
+      if (f === 12){
+        const y1 = H*0.35;
+        const y2 = H*0.65;
+        for (const y of [y1, y2]){
+          const d = document.createElementNS("http://www.w3.org/2000/svg","circle");
+          d.setAttribute("cx", String(x));
+          d.setAttribute("cy", String(y));
+          d.setAttribute("r", "6");
+          d.setAttribute("fill", "var(--fretInlay)");
+          d.setAttribute("opacity", "0.7");
+          svg.appendChild(d);
+        }
+      } else {
+        const d = document.createElementNS("http://www.w3.org/2000/svg","circle");
+        d.setAttribute("cx", String(x));
+        d.setAttribute("cy", String(H/2));
+        d.setAttribute("r", "6");
+        d.setAttribute("fill", "var(--fretInlay)");
+        d.setAttribute("opacity", "0.7");
+        svg.appendChild(d);
+      }
+    }
+
+    for (let s=0;s<6;s++){
+      const y = marginY + s*stringGap;
+      const stringLine = document.createElementNS("http://www.w3.org/2000/svg","line");
+      stringLine.setAttribute("x1", "0");
+      stringLine.setAttribute("x2", String(W));
+      stringLine.setAttribute("y1", String(y));
+      stringLine.setAttribute("y2", String(y));
+      stringLine.setAttribute("stroke", "var(--stringColor)");
+      const gauge = state.fretLefty ? (1.2 + (5 - s)*0.2) : (1.2 + s*0.2);
+      stringLine.setAttribute("stroke-width", String(gauge));
+      stringLine.setAttribute("opacity", "0.85");
+      svg.appendChild(stringLine);
+
+      const openMark = document.createElementNS("http://www.w3.org/2000/svg","circle");
+      openMark.setAttribute("cx", String(openX));
+      openMark.setAttribute("cy", String(y));
+      openMark.setAttribute("r", "4.5");
+      openMark.setAttribute("fill", "none");
+      openMark.setAttribute("stroke", "var(--fretInlay)");
+      openMark.setAttribute("stroke-width", "1.2");
+      openMark.setAttribute("opacity", "0.6");
+      svg.appendChild(openMark);
+    }
+
+    const baseOpenPcs = [4,11,7,2,9,4];
+    const openPcs = state.fretLefty ? [...baseOpenPcs].reverse() : baseOpenPcs;
+    for (let s=0;s<6;s++){
+      const y = marginY + s*stringGap;
+      for (let f=0; f<=frets; f++){
+        const note = (openPcs[s] + f) % 12;
+        if (!scaleSet.has(note)) continue;
+        const x = (f===0) ? openX : ((f - 0.5) * space);
+        placeScaleMarker(svg, x, y);
+      }
+    }
+
+    for (let s=0;s<6;s++){
+      const y = marginY + s*stringGap;
+      for (let f=0; f<=frets; f++){
+        const note = (openPcs[s] + f) % 12;
+        if (!chordSet.has(note)) continue;
+        const x = (f===0) ? openX : ((f - 0.5) * space);
+        const isRoot = note === ((ch.root%12)+12)%12;
+        const dot = document.createElementNS("http://www.w3.org/2000/svg","circle");
+        dot.setAttribute("cx", String(x));
+        dot.setAttribute("cy", String(y));
+        dot.setAttribute("r", isRoot ? "9" : "8");
+        dot.setAttribute("fill", isRoot ? "var(--good)" : "var(--chord)");
+        dot.setAttribute("stroke", isRoot ? "rgba(255,255,255,.85)" : "rgba(0,0,0,.55)");
+        dot.setAttribute("stroke-width", isRoot ? "2.2" : "1.4");
+        svg.appendChild(dot);
+      }
+    }
+  }
+
   function renderPianoForActive(){
+    const showFret = state.viewMode === "fretboard";
+    if (E.fretBox) E.fretBox.style.display = showFret ? "block" : "none";
+    if (E.pianoBox) E.pianoBox.style.display = showFret ? "none" : "block";
+    if (E.btnFretToggle){
+      E.btnFretToggle.classList.toggle("on", showFret);
+      E.btnFretToggle.setAttribute("aria-pressed", showFret ? "true" : "false");
+    }
+    if (E.btnPianoToggle){
+      E.btnPianoToggle.classList.toggle("on", !showFret);
+      E.btnPianoToggle.setAttribute("aria-pressed", showFret ? "false" : "true");
+    }
+    if (showFret){
+      renderFretboardForActive();
+      return;
+    }
+
     const ch = activeChord();
     if (!ch){
       E.pianoSvg.innerHTML = "";
@@ -3298,6 +3586,9 @@
       pageTheme: state.pageTheme,
       pianoTheme: state.pianoTheme,
       markerStyle: state.markerStyle,
+      viewMode: state.viewMode,
+      fretTheme: state.fretTheme,
+      fretLefty: state.fretLefty,
       morphBg: state.morphBg,
       kbOct: state.kbOct
     };
@@ -3322,13 +3613,14 @@
       scalesUsed:s.scalesUsed,
       limiter: structuredClone(s.limiter||state.limiter),
       pageTheme:s.pageTheme, pianoTheme:s.pianoTheme,
-      markerStyle:s.markerStyle, morphBg:s.morphBg, kbOct:s.kbOct
+      markerStyle:s.markerStyle, viewMode:s.viewMode, fretTheme:s.fretTheme, fretLefty:s.fretLefty, morphBg:s.morphBg, kbOct:s.kbOct
     });
 
     // push to UI
     syncUIFromState();
     applyPageTheme(state.pageTheme);
     applyPianoTheme(state.pianoTheme);
+    applyFretTheme(state.fretTheme);
     E.markerStyle.value = state.markerStyle;
     applyMorphBg(state.morphBg);
     renderAll();
@@ -3945,8 +4237,13 @@
       applyPageTheme(themeId);
       const pTheme = pick(Object.keys(PIANO_THEMES));
       applyPianoTheme(pTheme);
+      const fTheme = pick(Object.keys(FRET_THEMES));
+      applyFretTheme(fTheme);
       state.markerStyle = pick(["dots","rings","triangles","squares"]);
       E.markerStyle.value = state.markerStyle;
+      if (E.fretTheme) E.fretTheme.value = state.fretTheme;
+      state.fretLefty = chance(0.15);
+      if (E.fretLefty) E.fretLefty.checked = state.fretLefty;
       applyMorphBg(chance(0.8));
     }
 
@@ -3992,8 +4289,12 @@
     if (!state.lockTheme){
       applyPageTheme(pick(Object.keys(PAGE_THEMES)));
       applyPianoTheme(pick(Object.keys(PIANO_THEMES)));
+      applyFretTheme(pick(Object.keys(FRET_THEMES)));
       state.markerStyle = pick(["dots","rings","triangles","squares"]);
       E.markerStyle.value = state.markerStyle;
+      if (E.fretTheme) E.fretTheme.value = state.fretTheme;
+      state.fretLefty = chance(0.15);
+      if (E.fretLefty) E.fretLefty.checked = state.fretLefty;
       applyMorphBg(chance(0.85));
     }
 
@@ -4138,6 +4439,8 @@
 
     E.pageTheme.value = state.pageTheme;
     E.pianoTheme.value = state.pianoTheme;
+    E.fretTheme.value = state.fretTheme;
+    E.fretLefty.checked = !!state.fretLefty;
     E.markerStyle.value = state.markerStyle;
     E.morphBg.checked = !!state.morphBg;
 
@@ -4153,7 +4456,7 @@
   /* ---------- Advanced: reorder main menus ---------- */
   const SECTION_IDS = [
     {id:"cardHeader", name:"Title bar"},
-    {id:"cardPiano", name:"Piano"},
+    {id:"cardPiano", name:"Instrument"},
     {id:"cardLead", name:"Lead sheet"},
     {id:"cardControls", name:"Controls"},
     {id:"cardLimiters", name:"Chord limiters"},
@@ -4269,6 +4572,9 @@
         pageTheme: state.pageTheme,
         pianoTheme: state.pianoTheme,
         markerStyle: state.markerStyle,
+        viewMode: state.viewMode,
+        fretTheme: state.fretTheme,
+        fretLefty: state.fretLefty,
         morphBg: state.morphBg,
         kbOct: state.kbOct,
 
@@ -4322,6 +4628,9 @@
       pageTheme: saved.pageTheme ?? state.pageTheme,
       pianoTheme: saved.pianoTheme ?? state.pianoTheme,
       markerStyle: saved.markerStyle ?? state.markerStyle,
+      viewMode: saved.viewMode ?? state.viewMode,
+      fretTheme: saved.fretTheme ?? state.fretTheme,
+      fretLefty: saved.fretLefty ?? state.fretLefty,
       morphBg: saved.morphBg ?? state.morphBg,
       kbOct: saved.kbOct ?? state.kbOct,
     });
@@ -4366,6 +4675,7 @@
     // apply themes immediately
     applyPageTheme(state.pageTheme);
     applyPianoTheme(state.pianoTheme);
+    applyFretTheme(state.fretTheme);
     state.markerStyle = DEFAULTS.markerStyle;
     applyMorphBg(DEFAULTS.morphBg);
 
@@ -4446,6 +4756,18 @@
       saveAll();
       renderPianoForActive();
     });
+    E.fretTheme.addEventListener("change", ()=>{
+      pushHistory();
+      applyFretTheme(E.fretTheme.value);
+      saveAll();
+      renderPianoForActive();
+    });
+    E.fretLefty.addEventListener("change", ()=>{
+      pushHistory();
+      state.fretLefty = !!E.fretLefty.checked;
+      saveAll();
+      renderPianoForActive();
+    });
     E.markerStyle.addEventListener("change", ()=>{
       pushHistory();
       state.markerStyle = E.markerStyle.value;
@@ -4498,6 +4820,21 @@
     E.btnRedo.addEventListener("click", ()=> doRedo());
 
     E.btnCopy.addEventListener("click", ()=> copyChart());
+
+    if (E.btnPianoToggle){
+      E.btnPianoToggle.addEventListener("click", ()=>{
+        state.viewMode = "piano";
+        renderPianoForActive();
+        saveAll();
+      });
+    }
+    if (E.btnFretToggle){
+      E.btnFretToggle.addEventListener("click", ()=>{
+        state.viewMode = "fretboard";
+        renderPianoForActive();
+        saveAll();
+      });
+    }
 
     // sectional randoms
     E.btnRandGen.addEventListener("click", ()=> randomizeGeneratorOnly());
@@ -4576,6 +4913,7 @@
     initGenreDropdown();
     initThemeDropdowns();
     initPianoThemeDropdown();
+    initFretThemeDropdown();
     initEditDropdowns();
 
     loadOrder();
@@ -4585,6 +4923,7 @@
     // set theme
     applyPageTheme(state.pageTheme);
     applyPianoTheme(state.pianoTheme);
+    applyFretTheme(state.fretTheme);
     applyMorphBg(state.morphBg);
 
     // hydrate UI
