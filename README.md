@@ -1,4 +1,4 @@
 # fakebot
-Random jazz chart with minimalist band and keyboard display
+Random music chart with minimalist band, keyboard/fretboard display
 
 https://santismo.github.io/fakebot/
