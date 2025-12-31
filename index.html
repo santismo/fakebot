@@ -914,6 +914,13 @@
             </label>
           </div>
           <div class="miniCtl">
+            <label>Fret numbers</label>
+            <label class="chip" style="width:100%;justify-content:space-between;margin:0;">
+              <span>Show numbers</span>
+              <input type="checkbox" id="fretNumbers">
+            </label>
+          </div>
+          <div class="miniCtl">
             <label>Tone markers</label>
             <select id="markerStyle">
               <option value="dots" selected>Dots</option>
@@ -1501,6 +1508,7 @@
     viewMode: "piano",
     fretTheme: "rosewood",
     fretLefty: false,
+    fretNumbers: false,
     morphBg: true,
     kbOct: 2, /* 2 octaves = 14 white keys (default) */
   };
@@ -1543,6 +1551,7 @@
     viewMode: DEFAULTS.viewMode,
     fretTheme: DEFAULTS.fretTheme,
     fretLefty: DEFAULTS.fretLefty,
+    fretNumbers: DEFAULTS.fretNumbers,
     morphBg: DEFAULTS.morphBg,
     kbOct: DEFAULTS.kbOct,
     allowedCenters: [],
@@ -1649,6 +1658,7 @@
     pianoTheme: document.getElementById("pianoTheme"),
     fretTheme: document.getElementById("fretTheme"),
     fretLefty: document.getElementById("fretLefty"),
+    fretNumbers: document.getElementById("fretNumbers"),
 
     advBack: document.getElementById("advBack"),
     btnGear: document.getElementById("btnGear"),
@@ -2586,8 +2596,8 @@
     const space = W / frets;
     const marginY = 22;
     const stringGap = (H - marginY*2) / 5;
-    const nutWidth = Math.max(6, space * 0.18);
-    const openX = Math.max(nutWidth * 0.6, space * 0.2);
+    const nutWidth = Math.max(8, space * 0.22);
+    const openX = nutWidth * 0.5;
 
     const bg = document.createElementNS("http://www.w3.org/2000/svg","rect");
     bg.setAttribute("x", "0");
@@ -2615,7 +2625,9 @@
     nut.setAttribute("width", String(nutWidth));
     nut.setAttribute("height", String(H));
     nut.setAttribute("fill", "var(--fretLineStrong)");
-    nut.setAttribute("opacity", "0.65");
+    nut.setAttribute("stroke", "rgba(0,0,0,.55)");
+    nut.setAttribute("stroke-width", "2");
+    nut.setAttribute("opacity", "0.85");
     svg.appendChild(nut);
 
     const inlays = [3,5,7,9,12];
@@ -2641,6 +2653,35 @@
         d.setAttribute("fill", "var(--fretInlay)");
         d.setAttribute("opacity", "0.7");
         svg.appendChild(d);
+      }
+    }
+
+    if (state.fretNumbers){
+      for (let f=1; f<=frets; f++){
+        const x = (f - 0.5) * space;
+        const tTop = document.createElementNS("http://www.w3.org/2000/svg","text");
+        tTop.setAttribute("x", String(x));
+        tTop.setAttribute("y", "14");
+        tTop.setAttribute("fill", "var(--fretInlay)");
+        tTop.setAttribute("font-size", "12");
+        tTop.setAttribute("font-weight", "700");
+        tTop.setAttribute("text-anchor", "middle");
+        tTop.setAttribute("dominant-baseline", "middle");
+        tTop.setAttribute("opacity", "0.8");
+        tTop.textContent = String(f);
+        svg.appendChild(tTop);
+
+        const tBot = document.createElementNS("http://www.w3.org/2000/svg","text");
+        tBot.setAttribute("x", String(x));
+        tBot.setAttribute("y", String(H - 10));
+        tBot.setAttribute("fill", "var(--fretInlay)");
+        tBot.setAttribute("font-size", "12");
+        tBot.setAttribute("font-weight", "700");
+        tBot.setAttribute("text-anchor", "middle");
+        tBot.setAttribute("dominant-baseline", "middle");
+        tBot.setAttribute("opacity", "0.8");
+        tBot.textContent = String(f);
+        svg.appendChild(tBot);
       }
     }
 
@@ -3589,6 +3630,7 @@
       viewMode: state.viewMode,
       fretTheme: state.fretTheme,
       fretLefty: state.fretLefty,
+      fretNumbers: state.fretNumbers,
       morphBg: state.morphBg,
       kbOct: state.kbOct
     };
@@ -3613,7 +3655,7 @@
       scalesUsed:s.scalesUsed,
       limiter: structuredClone(s.limiter||state.limiter),
       pageTheme:s.pageTheme, pianoTheme:s.pianoTheme,
-      markerStyle:s.markerStyle, viewMode:s.viewMode, fretTheme:s.fretTheme, fretLefty:s.fretLefty, morphBg:s.morphBg, kbOct:s.kbOct
+      markerStyle:s.markerStyle, viewMode:s.viewMode, fretTheme:s.fretTheme, fretLefty:s.fretLefty, fretNumbers:s.fretNumbers, morphBg:s.morphBg, kbOct:s.kbOct
     });
 
     // push to UI
@@ -4441,6 +4483,7 @@
     E.pianoTheme.value = state.pianoTheme;
     E.fretTheme.value = state.fretTheme;
     E.fretLefty.checked = !!state.fretLefty;
+    E.fretNumbers.checked = !!state.fretNumbers;
     E.markerStyle.value = state.markerStyle;
     E.morphBg.checked = !!state.morphBg;
 
@@ -4575,6 +4618,7 @@
         viewMode: state.viewMode,
         fretTheme: state.fretTheme,
         fretLefty: state.fretLefty,
+        fretNumbers: state.fretNumbers,
         morphBg: state.morphBg,
         kbOct: state.kbOct,
 
@@ -4631,6 +4675,7 @@
       viewMode: saved.viewMode ?? state.viewMode,
       fretTheme: saved.fretTheme ?? state.fretTheme,
       fretLefty: saved.fretLefty ?? state.fretLefty,
+      fretNumbers: saved.fretNumbers ?? state.fretNumbers,
       morphBg: saved.morphBg ?? state.morphBg,
       kbOct: saved.kbOct ?? state.kbOct,
     });
@@ -4765,6 +4810,12 @@
     E.fretLefty.addEventListener("change", ()=>{
       pushHistory();
       state.fretLefty = !!E.fretLefty.checked;
+      saveAll();
+      renderPianoForActive();
+    });
+    E.fretNumbers.addEventListener("change", ()=>{
+      pushHistory();
+      state.fretNumbers = !!E.fretNumbers.checked;
       saveAll();
       renderPianoForActive();
     });
