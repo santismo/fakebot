@@ -366,7 +366,7 @@
           <div class="grow">
             <h1>🤖 fakebot</h1>
             <div class="sub">random charts · band · keyboard display</div>
-            <div class="msg" id="msg">Tip: tap a bar (or half) to focus the piano + band on that chord (and preview it).</div>
+            <div class="msg" id="msg"> </div>
           </div>
 
           <div class="grow" style="min-width:260px">
@@ -861,7 +861,7 @@
           </div>
         </div>
 
-        <div class="msg" style="margin-top:10px;">Tip: settings save locally in your browser.</div>
+        <div class="msg" style="margin-top:10px;"></div>
       </div>
     </div>
   </div>
@@ -3710,7 +3710,7 @@
     try{
       await navigator.clipboard.writeText(text);
       E.msg.textContent = "Copied chart to clipboard ✅";
-      setTimeout(()=>E.msg.textContent="Tip: tap a bar (or half) to focus the piano + band on that chord (and preview it).", 1400);
+      setTimeout(()=>E.msg.textContent=" ", 1400);
     }catch{
       // fallback
       const ta=document.createElement("textarea");
