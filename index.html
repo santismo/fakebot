@@ -76,7 +76,7 @@
     body::after{
       content:"";
       position:fixed;
-      inset:-40px;
+      inset:-60px;
       z-index:-1;
       pointer-events:none;
       opacity: calc(var(--morphOn) * 0.95);
@@ -85,15 +85,16 @@
         radial-gradient(1100px 700px at 80% 25%, var(--morphB), transparent 62%),
         radial-gradient(1200px 850px at 60% 85%, var(--morphC), transparent 62%),
         radial-gradient(900px 600px at 25% 80%, var(--morphD), transparent 62%);
-      filter: blur(10px) saturate(1.15);
+      background-size: 200% 200%;
+      filter: blur(12px) saturate(1.2);
       transform: translateZ(0);
-      animation: morphMove 14s ease-in-out infinite alternate;
+      animation: morphMove 22s ease-in-out infinite;
       mix-blend-mode: screen;
     }
     @keyframes morphMove{
-      0%   { transform: translate3d(-10px,-8px,0) scale(1.02); }
-      50%  { transform: translate3d(18px,10px,0) scale(1.06); }
-      100% { transform: translate3d(-6px,14px,0) scale(1.04); }
+      0%   { background-position: 0% 20%; transform: translate3d(-18px,-12px,0) scale(1.06); }
+      50%  { background-position: 100% 60%; transform: translate3d(22px,16px,0) scale(1.1); }
+      100% { background-position: 15% 90%; transform: translate3d(-10px,20px,0) scale(1.08); }
     }
 
     button, input, select, label {font:inherit}
@@ -2203,6 +2204,22 @@
       ink:"#c9ffe8", muted:"#7ad4b0", panel:"rgba(0,255,154,.04)", panel2:"rgba(0,0,0,.32)", line:"rgba(0,255,154,.10)" },
     sunset: { name:"Sunset", bg:"#0a0610", a:"rgba(255,120,80,.10)", b:"rgba(255,77,255,.08)", c:"rgba(122,162,255,.07)",
       ink:"#f6efff", muted:"#b8a7c6", panel:"rgba(255,255,255,.05)", panel2:"rgba(0,0,0,.22)", line:"rgba(255,255,255,.09)" },
+    aurora: { name:"Aurora", bg:"#071019", a:"rgba(42,206,162,.12)", b:"rgba(72,146,255,.10)", c:"rgba(255,198,89,.06)",
+      ink:"#e6f3ff", muted:"#8aa3b5", panel:"rgba(255,255,255,.04)", panel2:"rgba(0,0,0,.20)", line:"rgba(255,255,255,.08)" },
+    dune: { name:"Dune", bg:"#120f0a", a:"rgba(255,176,90,.10)", b:"rgba(190,137,70,.08)", c:"rgba(99,205,162,.05)",
+      ink:"#f6efe4", muted:"#b5a48d", panel:"rgba(255,255,255,.04)", panel2:"rgba(0,0,0,.24)", line:"rgba(255,255,255,.08)" },
+    slate: { name:"Slate", bg:"#0c1116", a:"rgba(120,168,205,.10)", b:"rgba(140,122,200,.06)", c:"rgba(90,180,160,.05)",
+      ink:"#e6edf5", muted:"#92a1b3", panel:"rgba(255,255,255,.04)", panel2:"rgba(0,0,0,.22)", line:"rgba(255,255,255,.08)" },
+    forest: { name:"Forest", bg:"#08110d", a:"rgba(92,210,128,.12)", b:"rgba(33,146,111,.08)", c:"rgba(255,210,120,.05)",
+      ink:"#e6fff0", muted:"#7ea99b", panel:"rgba(255,255,255,.04)", panel2:"rgba(0,0,0,.24)", line:"rgba(255,255,255,.08)" },
+    tide: { name:"Tide", bg:"#07121a", a:"rgba(64,200,255,.12)", b:"rgba(68,130,255,.08)", c:"rgba(120,255,200,.05)",
+      ink:"#e6f6ff", muted:"#87a4b5", panel:"rgba(255,255,255,.04)", panel2:"rgba(0,0,0,.22)", line:"rgba(255,255,255,.08)" },
+    ember: { name:"Ember", bg:"#140b09", a:"rgba(255,120,70,.12)", b:"rgba(255,90,40,.08)", c:"rgba(255,210,120,.05)",
+      ink:"#fff2e8", muted:"#c4a08d", panel:"rgba(255,255,255,.04)", panel2:"rgba(0,0,0,.22)", line:"rgba(255,255,255,.08)" },
+    studio: { name:"Studio", bg:"#0b0c10", a:"rgba(190,190,190,.10)", b:"rgba(70,140,255,.07)", c:"rgba(255,190,90,.05)",
+      ink:"#eef0f3", muted:"#98a3af", panel:"rgba(255,255,255,.04)", panel2:"rgba(0,0,0,.22)", line:"rgba(255,255,255,.08)" },
+    peach: { name:"Peach", bg:"#1a0f0c", a:"rgba(255,150,120,.12)", b:"rgba(255,210,160,.10)", c:"rgba(120,210,190,.06)",
+      ink:"#fff4ee", muted:"#c9a89a", panel:"rgba(255,255,255,.04)", panel2:"rgba(0,0,0,.22)", line:"rgba(255,255,255,.08)" },
   };
 
   function initThemeDropdowns(){
