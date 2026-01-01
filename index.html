@@ -177,6 +177,49 @@
       background: var(--fretWood);
       overflow:hidden;
     }
+    .fileInput{
+      width:100%;
+      min-height:38px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.25);
+      color: var(--pageInk);
+      padding:8px;
+    }
+    .textInput{
+      width:100%;
+      min-height:38px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.25);
+      color: var(--pageInk);
+      padding:8px;
+    }
+    .songList{
+      margin-top:10px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      max-height:260px;
+      overflow:auto;
+      padding:6px;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:12px;
+      background: rgba(0,0,0,.18);
+    }
+    .songRow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:8px 10px;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:12px;
+      background: rgba(0,0,0,.18);
+    }
+    .songMeta{min-width:0;}
+    .songTitle{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .songSub{font-size:12px;color:var(--pageMuted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
     /* Title bar button alignment */
     #cardHeader .btnRow{justify-content:center;}
@@ -528,6 +571,49 @@
             </div>
           </div>
         </details>
+
+                <details class="group" id="grpSongs">
+          <summary>
+            <div class="sumLeft">
+              <div>
+                <div class="sumTitle">Songs</div>
+                <div class="sumSub">iReal playlist loader</div>
+              </div>
+            </div>
+            <div class="chev">▼</div>
+          </summary>
+          <div class="groupBody">
+            <div class="controls">
+              <div class="control" style="grid-column: 1 / -1;">
+                <label>Playlist URL</label>
+                <div class="inline">
+                  <input class="textInput" type="text" id="songUrl" placeholder="https://...">
+                  <button class="btn tiny" id="btnSongFetch" type="button">Fetch</button>
+                </div>
+                <div class="msg" id="songStatus" style="margin:6px 0 0 0;">Auto-loads online, or upload a file below.</div>
+              </div>
+              <div class="control" style="grid-column: 1 / -1;">
+                <label>Manual upload (.txt)</label>
+                <input class="fileInput" type="file" id="songFile" accept=".txt,.ireal,.irealbook,.csv,text/plain">
+              </div>
+              <div class="control">
+                <label>Search</label>
+                <input class="textInput" type="text" id="songSearch" placeholder="Title or composer">
+              </div>
+              <div class="control">
+                <label>Sort</label>
+                <select id="songSort">
+                  <option value="playlist" selected>Playlist order</option>
+                  <option value="az">A–Z</option>
+                </select>
+              </div>
+              <div class="control" style="grid-column: 1 / -1;">
+                <div class="songList" id="songList"></div>
+              </div>
+            </div>
+          </div>
+        </details>
+
 
         <details class="group" id="grpTime">
           <summary>
@@ -1005,6 +1091,10 @@
 
   /* ---------- Core helpers ---------- */
   const NOTE_NAMES = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
+  const NOTE_TO_PC = {
+    C:0, "B#":0, "C#":1, Db:1, D:2, "D#":3, Eb:3, E:4, Fb:4, "E#":5, F:5, "F#":6, Gb:6,
+    G:7, "G#":8, Ab:8, A:9, "A#":10, Bb:10, B:11, Cb:11
+  };
   const pc = (n)=>((n%12)+12)%12;
   const clamp = (n,a,b)=>Math.max(a,Math.min(b,n));
   const rint = (a,b)=>Math.floor(a + Math.random()*(b-a+1));
@@ -1618,6 +1708,14 @@
 
     progressionLogic: document.getElementById("progressionLogic"),
     genrePreset: document.getElementById("genrePreset"),
+
+    songUrl: document.getElementById("songUrl"),
+    btnSongFetch: document.getElementById("btnSongFetch"),
+    songFile: document.getElementById("songFile"),
+    songSearch: document.getElementById("songSearch"),
+    songSort: document.getElementById("songSort"),
+    songList: document.getElementById("songList"),
+    songStatus: document.getElementById("songStatus"),
 
     bars: document.getElementById("bars"),
     barsNum: document.getElementById("barsNum"),
@@ -2373,6 +2471,552 @@
     try{ localStorage.setItem("fm_morph_bg", state.morphBg ? "1" : "0"); }catch{}
   }
 
+
+
+  /* ---------- iReal playlist loader ---------- */
+  const DEFAULT_PLAYLIST_URL = "https://raw.githubusercontent.com/santismo/fakebot/main/real%20playliast.txt";
+  const IREAL_MUSIC_PREFIX = "1r34LbKcu7";
+  let songLibrary = [];
+  let songQuery = "";
+  let songSort = "playlist";
+
+  function normalizePlaylistUrl(url){
+    let u = String(url || "").trim();
+    if (!u) return "";
+    const m = u.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^#?]+)/i);
+    if (m){
+      u = `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}`;
+    }
+    return u;
+  }
+
+  function parseSongKey(key){
+    if (!key) return null;
+    const clean = String(key).replace(/\s+/g, "");
+    const minor = clean.includes("-");
+    const rootName = clean.replace(/[^A-G#b]/g, "");
+    if (!rootName) return null;
+    const pcVal = NOTE_TO_PC[rootName] ?? 0;
+    return { rootPc: pcVal, mode: minor ? "aeolian" : "ionian" };
+  }
+
+  function mapIrealQuality(raw){
+    if (raw == null) return "maj7";
+    const low = String(raw).toLowerCase();
+    if (!low) return "maj7";
+    const has = (re)=> re.test(low);
+
+    if (has(/m7b5|ø|h/)) return "ø7";
+    if (has(/dim|o/)) return "dim7";
+
+    const isMinorMajor = has(/-\^|m\^|mmaj|minmaj/);
+    const isSus = has(/sus/);
+    const isAdd = has(/add/);
+    const isMajor = has(/\^|maj/);
+    const isMinor = has(/(^|[^a-z])m(?!a)|-|min/);
+
+    const hasB9 = has(/b9/);
+    const hasS9 = has(/#9/);
+    const has13 = has(/13/);
+    const has11 = has(/11/);
+    const has9 = has(/9/);
+    const has6 = has(/6/);
+    const has7 = has(/7/);
+    const has69 = has(/69/);
+
+    if (isMinorMajor) return "mMaj7";
+    if (isSus) return (has7 || has9 || has11 || has13) ? "7sus" : "sus";
+    if (isAdd && has9) return "add9";
+    if (has69) return "6/9";
+
+    if (isMajor){
+      if (has9) return "maj9";
+      if (has6 && !has7) return "6";
+      return "maj7";
+    }
+    if (isMinor){
+      if (has11) return "m11";
+      if (has9) return "m9";
+      if (has6 && !has7) return "m6";
+      return "m7";
+    }
+
+    if (hasB9) return "7(b9)";
+    if (hasS9) return "7(#9)";
+    if (has13) return "13";
+    if (has11) return "11";
+    if (has9) return "9";
+    if (has6 && !has7) return "6";
+    if (has7) return "7";
+    return "7";
+  }
+
+  function qualityMetaFromSymbol(sym){
+    const map = {
+      "maj7": {symbol:"maj7", family:"maj", key:"maj7", display:"maj7"},
+      "maj9": {symbol:"maj9", family:"maj", key:"maj9", display:"maj9"},
+      "6": {symbol:"maj6", family:"maj", key:"maj6", display:"6"},
+      "6/9": {symbol:"6/9", family:"maj", key:"6/9", display:"6/9"},
+      "add9": {symbol:"add9", family:"maj", key:"add9", display:"add9"},
+      "m7": {symbol:"min7", family:"min", key:"min7", display:"m7"},
+      "m9": {symbol:"min9", family:"min", key:"min9", display:"m9"},
+      "m11": {symbol:"min11", family:"min", key:"min11", display:"m11"},
+      "m6": {symbol:"min6", family:"min", key:"min6", display:"m6"},
+      "mMaj7": {symbol:"minMaj7", family:"minmaj", key:"minMaj7", display:"mMaj7"},
+      "7": {symbol:"dom7", family:"dom", key:"dom7", display:"7"},
+      "9": {symbol:"dom9", family:"dom", key:"dom9", display:"9"},
+      "11": {symbol:"dom11", family:"dom", key:"dom11", display:"11"},
+      "13": {symbol:"dom13", family:"dom", key:"dom13", display:"13"},
+      "7(b9)": {symbol:"dom7b9", family:"dom", key:"dom7b9", display:"7(b9)"},
+      "7(#9)": {symbol:"dom7sharp9", family:"dom", key:"dom7sharp9", display:"7(#9)"},
+      "sus": {symbol:"sus", family:"sus", key:"sus", display:"sus"},
+      "7sus": {symbol:"7sus", family:"sus", key:"7sus", display:"7sus"},
+      "ø7": {symbol:"halfdim", family:"hdim", key:"halfdim", display:"ø7"},
+      "dim7": {symbol:"dim7", family:"dim", key:"dim7", display:"dim7"},
+    };
+    return map[sym] || {symbol:"dom7", family:"dom", key:"dom7", display:"7"};
+  }
+
+  function parseIrealChordSymbol(sym){
+    const clean = String(sym || "").trim();
+    if (!clean) return null;
+    const match = clean.match(/^([A-G])([#b]?)([^/]*)(?:\/([A-G])([#b]?))?$/i);
+    if (!match) return null;
+    const rootName = match[1].toUpperCase() + (match[2] || "");
+    const rootPc = NOTE_TO_PC[rootName];
+    if (rootPc == null) return null;
+    const qualRaw = match[3] || "";
+    const slashName = match[4] ? (match[4].toUpperCase() + (match[5] || "")) : null;
+    const symMapped = mapIrealQuality(qualRaw);
+    const meta = qualityMetaFromSymbol(symMapped);
+    const chord = makeChord(rootPc, meta);
+    if (slashName && NOTE_TO_PC[slashName] != null) chord.slash = NOTE_TO_PC[slashName];
+    return chord;
+  }
+
+  function unscrambleIreal(input){
+    let s = String(input || "");
+    let r = "";
+
+    while (s.length > 50){
+      const p = s.substring(0, 50);
+      s = s.substring(50);
+      if (s.length < 2){
+        r += p;
+      } else {
+        r += obfusc50(p);
+      }
+    }
+    return r + s;
+  }
+
+  function obfusc50(s){
+    const chars = s.split("");
+    for (let i=0;i<5;i++){
+      chars[49 - i] = s[i];
+      chars[i] = s[49 - i];
+    }
+    for (let i=10;i<24;i++){
+      chars[49 - i] = s[i];
+      chars[i] = s[49 - i];
+    }
+    return chars.join("");
+  }
+
+  function parseIrealMeasures(raw){
+    let measures = [];
+    let startRepeatLocation = null;
+    let lastChord = null;
+    let endRepeatLocation = null;
+    let timeSignature = null;
+    let thirdEndingImminent = false;
+    let fineLocation = null;
+    let dcAlFineImminent = false;
+    let dcAlCodaImminent = false;
+    let dsAlCodaImminent = false;
+    let codaLocation = null;
+    let segnoLocation = null;
+
+    function resetVars(){
+      measures = [];
+      startRepeatLocation = null;
+      endRepeatLocation = null;
+      lastChord = null;
+      codaLocation = null;
+      segnoLocation = null;
+      timeSignature = null;
+      thirdEndingImminent = false;
+      dcAlCodaImminent = false;
+      dsAlCodaImminent = false;
+      fineLocation = null;
+      dcAlFineImminent = false;
+    }
+
+    function checkForRepeats(match){
+      const tag = (match[1] || "").toLowerCase();
+      if (tag === "d.c. al 3rd ending") thirdEndingImminent = true;
+      if (tag === "d.c. al fine") dcAlFineImminent = true;
+      if (tag === "d.c. al coda") dcAlCodaImminent = true;
+      if (tag === "d.s. al coda") dsAlCodaImminent = true;
+      if (tag === "fine") fineLocation = measures.length;
+    }
+
+    function setTimeSignature(match){
+      timeSignature = match[1];
+    }
+
+    function pushNull(){
+      if (measures.length === 0) measures.push([]);
+      measures[measures.length - 1].push(null);
+    }
+
+    function repeatLastMeasure(){
+      measures[measures.length - 1] = measures[measures.length - 2];
+    }
+
+    function repeatLastMeasureAndAddNew(){
+      measures[measures.length] = measures[measures.length - 1];
+    }
+
+    function repeatLastTwoMeasures(){
+      measures[measures.length - 1] = measures[measures.length - 3];
+      measures[measures.length] = measures[measures.length - 2];
+    }
+
+    function setStartRepeatLocation(){
+      createNewMeasure();
+      startRepeatLocation = measures.length - 1;
+      endRepeatLocation = null;
+    }
+
+    function setEndRepeatLocation(match){
+      const ending = parseInt(match[1], 10);
+      if (ending === 1) endRepeatLocation = measures.length - 1;
+    }
+
+    function setSegnoLocation(){
+      segnoLocation = measures.length - 1;
+    }
+
+    function setCodaLocation(){
+      codaLocation = measures.length;
+    }
+
+    function createNewMeasure(){
+      if (measures.length === 0 || measures[measures.length - 1].length !== 0){
+        measures.push([]);
+      }
+    }
+
+    function repeatEverythingToEndRepeatLocation(){
+      if (!endRepeatLocation) endRepeatLocation = measures.length;
+      measures.push(...measures.slice(startRepeatLocation, endRepeatLocation));
+      createNewMeasure();
+    }
+
+    function repeatRemainingEndings(){
+      if (thirdEndingImminent){
+        repeatEverythingToEndRepeatLocation();
+        thirdEndingImminent = false;
+      }
+      if (dcAlFineImminent){
+        measures.push(...measures.slice(0, fineLocation));
+        dcAlFineImminent = false;
+      }
+      if (dcAlCodaImminent){
+        measures.push(...measures.slice(0, codaLocation));
+        dcAlCodaImminent = false;
+      }
+      if (dsAlCodaImminent){
+        measures.push(...measures.slice(segnoLocation, codaLocation));
+        dsAlCodaImminent = false;
+      }
+      if (!(thirdEndingImminent || dcAlFineImminent || dcAlCodaImminent || dsAlCodaImminent)){
+        createNewMeasure();
+      }
+    }
+
+    function pushChordInMeasures(match){
+      if (measures.length === 0) measures.push([]);
+      let chord = match[0];
+      if (chord.startsWith("W") && lastChord){
+        chord = chord.replace("W", lastChord);
+      } else {
+        lastChord = chord.split("/")[0];
+      }
+      measures[measures.length - 1].push(chord);
+    }
+
+    function removeEmptyMeasures(list){
+      return list.filter(x => x.length !== 0);
+    }
+
+    const rules = [
+      { token: "XyQ", description: "Empty space" },
+      { token: /\*\w/, description: "Section marker" },
+      { token: /<(.*?)>/, description: "Comments inside carets", operation: checkForRepeats },
+      { token: /T(\d+)/, description: "Time signature", operation: setTimeSignature },
+      { token: "x", description: "Repeat previous measure in current measure", operation: repeatLastMeasure },
+      { token: "Kcl", description: "Repeat previous measure and create new measure", operation: repeatLastMeasureAndAddNew },
+      { token: /r|XyQ/, description: "Repeat previous two measures", operation: repeatLastTwoMeasures },
+      { token: /Y+/, description: "Vertical spacers" },
+      { token: "n", description: "No Chord (N.C)", operation: pushNull },
+      { token: "p", description: "Pause slash" },
+      { token: "U", description: "Ending measure for player" },
+      { token: "S", description: "Segno", operation: setSegnoLocation },
+      { token: "Q", description: "Coda", operation: setCodaLocation },
+      { token: "{", description: "Start repeat marker", operation: setStartRepeatLocation },
+      { token: "}", description: "End repeat marker", operation: repeatEverythingToEndRepeatLocation },
+      { token: "LZ|", description: "Bar line", operation: createNewMeasure },
+      { token: "|", description: "Bar line", operation: createNewMeasure },
+      { token: "LZ", description: "Bar line", operation: createNewMeasure },
+      { token: "[", description: "Double bar start", operation: createNewMeasure },
+      { token: "]", description: "Double bar end", operation: repeatRemainingEndings },
+      { token: /N(\d)/, description: "Numbered endings", operation: setEndRepeatLocation },
+      { token: "Z", description: "Final bar line", operation: repeatRemainingEndings },
+      { token: /[A-GW]{1}[\+\-\^\dhob#suadlt]*(\/[A-G][#b]?)?/, description: "Chord", operation: pushChordInMeasures }
+    ];
+
+    function parse(inputString){
+      if (!inputString) return;
+      for (let i=0;i<rules.length;i++){
+        const rule = rules[i];
+        if (typeof rule.token === "string"){
+          if (inputString.startsWith(rule.token)){
+            if (rule.operation) rule.operation();
+            parse(inputString.substring(rule.token.length).trim());
+            return;
+          }
+        } else if (rule.token instanceof RegExp){
+          const match = inputString.match(rule.token);
+          if (match && match.index === 0){
+            if (rule.operation) rule.operation(match);
+            parse(inputString.substring(match[0].length).trim());
+            return;
+          }
+        }
+        if (i === rules.length - 1 && inputString.length > 1){
+          parse(inputString.substring(1));
+          return;
+        }
+      }
+    }
+
+    resetVars();
+    let cleaned = String(raw || "");
+    const prefixIndex = cleaned.indexOf(IREAL_MUSIC_PREFIX);
+    if (prefixIndex >= 0){
+      cleaned = cleaned.slice(prefixIndex + IREAL_MUSIC_PREFIX.length);
+    }
+    cleaned = unscrambleIreal(cleaned).trim();
+    if (cleaned) parse(cleaned);
+    return { measures: removeEmptyMeasures(measures), timeSignature, raw: cleaned };
+  }
+
+  function mergeSlashChords(bars){
+    if (!Array.isArray(bars) || !bars.length) return;
+
+    // In-bar slash hints: treat dom a semitone below as slash bass.
+    bars.forEach((bar)=>{
+      const chords = bar?.chords || [];
+      if (chords.length !== 2) return;
+      const a = chords[0];
+      const b = chords[1];
+      if (!a || !b || a.slash!=null) return;
+      if (b.family !== "dom") return;
+      if (pc(b.root - a.root) !== 11) return;
+      a.slash = b.root;
+      bar.chords = [a];
+      bar.split = false;
+    });
+
+    // Across-bar slash hints (e.g., G-6 | Gb7).
+    for (let i=0;i<bars.length-1;i++){
+      const cur = bars[i];
+      const next = bars[i+1];
+      if (!cur?.chords?.length || !next?.chords?.length) continue;
+      if (cur.chords.length !== 1 || next.chords.length !== 1) continue;
+      const a = cur.chords[0];
+      const b = next.chords[0];
+      if (!a || !b || a.slash!=null) continue;
+      if (b.family !== "dom") continue;
+      if (pc(b.root - a.root) !== 11) continue;
+      a.slash = b.root;
+      cur.chords = [a];
+      cur.split = false;
+      bars.splice(i+1, 1);
+      i -= 1;
+    }
+  }
+
+  function parseIrealBars(chart){
+    const parsed = parseIrealMeasures(chart);
+    const measures = parsed?.measures || [];
+    const bars = [];
+
+    measures.forEach((measure)=>{
+      if (!Array.isArray(measure) || !measure.length) return;
+      const chordObjs = [];
+      for (const sym of measure){
+        if (!sym) continue;
+        const chord = parseIrealChordSymbol(sym);
+        if (chord) chordObjs.push(chord);
+        if (chordObjs.length >= 2) break;
+      }
+      if (!chordObjs.length) return;
+      bars.push({ split: chordObjs.length > 1, chords: chordObjs });
+    });
+
+    mergeSlashChords(bars);
+    return bars;
+  }
+
+  function parseIrealPlaylist(text){
+    const urls = String(text).match(/irealb:\/\/[^\s\]]+/g) || [];
+    const songs = [];
+    const seen = new Set();
+
+    urls.forEach((url)=>{
+      let payload = "";
+      try{ payload = decodeURIComponent(url.slice("irealb://".length)); }catch{ payload = url.slice("irealb://".length); }
+      const chunks = payload.split("===").filter(s=>s.trim().length);
+      chunks.forEach((chunk)=>{
+        const parts = chunk.split(/=+/).filter(Boolean);
+        if (parts.length < 7) return;
+
+        let title, composer, style, key, transpose, music, compStyle, bpm, repeats;
+        if (parts.length === 7){
+          [title, composer, style, key, music, bpm, repeats] = parts;
+        } else if (parts.length === 8 && parts[4].startsWith(IREAL_MUSIC_PREFIX)){
+          [title, composer, style, key, music, compStyle, bpm, repeats] = parts;
+        } else if (parts.length === 8 && parts[5].startsWith(IREAL_MUSIC_PREFIX)){
+          [title, composer, style, key, transpose, music, compStyle, bpm] = parts;
+        } else if (parts.length >= 9){
+          [title, composer, style, key, transpose, music, compStyle, bpm, repeats] = parts;
+        } else {
+          [title, composer, style, key, music] = parts;
+        }
+
+        title = (title || "").trim();
+        composer = (composer || "").trim();
+        style = (style || "").trim();
+        key = (key || "").trim();
+        if (!title || !music) return;
+        if (music.includes("=0=0")) music = music.split("=0=0")[0];
+
+        const bars = parseIrealBars(music);
+        if (!bars.length) return;
+        const dedupeKey = `${title}||${composer}||${key}`.toLowerCase();
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+        songs.push({ title, composer, style, key, bars });
+      });
+    });
+
+    return songs;
+  }
+
+  function filteredSongs(){
+    let list = songLibrary.slice();
+    if (songQuery){
+      const q = songQuery.toLowerCase();
+      list = list.filter(s =>
+        (s.title || "").toLowerCase().includes(q) ||
+        (s.composer || "").toLowerCase().includes(q)
+      );
+    }
+    if (songSort === "az"){
+      list.sort((a,b)=> (a.title||"").localeCompare(b.title||"", undefined, {sensitivity:"base"}));
+    }
+    return list;
+  }
+
+  function setSongStatus(text){
+    if (E.songStatus) E.songStatus.textContent = text;
+  }
+
+  function renderSongList(){
+    if (!E.songList || !E.songStatus) return;
+    E.songList.innerHTML = "";
+    if (!songLibrary.length){
+      setSongStatus("No songs loaded yet.");
+      return;
+    }
+    const list = filteredSongs();
+    setSongStatus(`Loaded ${songLibrary.length} song${songLibrary.length===1?"":"s"} · Showing ${list.length}`);
+    list.forEach((song)=>{
+      const row = document.createElement("div");
+      row.className = "songRow";
+
+      const meta = document.createElement("div");
+      meta.className = "songMeta";
+      const title = document.createElement("div");
+      title.className = "songTitle";
+      title.textContent = song.title || "Untitled";
+      const sub = document.createElement("div");
+      sub.className = "songSub";
+      const parts = [];
+      if (song.composer) parts.push(song.composer);
+      if (song.style) parts.push(song.style);
+      if (song.key) parts.push(song.key);
+      sub.textContent = parts.join(" · ");
+      meta.appendChild(title);
+      meta.appendChild(sub);
+
+      const btn = document.createElement("button");
+      btn.className = "btn small";
+      btn.type = "button";
+      btn.textContent = "Load";
+      btn.addEventListener("click", ()=> loadSongToChart(song));
+
+      row.appendChild(meta);
+      row.appendChild(btn);
+      E.songList.appendChild(row);
+    });
+  }
+
+  async function loadPlaylistFromUrl(url){
+    const normalized = normalizePlaylistUrl(url);
+    if (!normalized){
+      setSongStatus("Enter a valid playlist URL.");
+      return;
+    }
+    setSongStatus(`Loading ${normalized}...`);
+    try{
+      const res = await fetch(normalized, { cache: "no-store" });
+      if (!res.ok) throw new Error("bad response");
+      const text = await res.text();
+      songLibrary = parseIrealPlaylist(text);
+      renderSongList();
+    } catch {
+      setSongStatus("Could not load URL. Use manual upload if offline.");
+      if (E.songList) E.songList.innerHTML = "";
+    }
+  }
+
+  function loadSongToChart(song){
+    if (!song || !Array.isArray(song.bars) || !song.bars.length) return;
+    pushHistory();
+    state.chartBars = structuredClone(song.bars);
+    state.bars = state.chartBars.length;
+    state.halfEnabled = state.chartBars.some(b=>b.split);
+    state.activeBar = 0;
+    state.activeHalf = 0;
+
+    const keyInfo = parseSongKey(song.key);
+    if (keyInfo){
+      state.keyRoot = keyInfo.rootPc;
+      state.keyMode = keyInfo.mode;
+    }
+
+    assignChordModesWithLimit(state.chartBars);
+    renderAll();
+    saveAll();
+    if (E.msg){
+      E.msg.textContent = `Loaded: ${song.title}`;
+      setTimeout(()=>{ E.msg.textContent = " "; }, 1500);
+    }
+  }
   /* ---------- Rendering ---------- */
   function flatChartSlots(){
     const slots = [];
@@ -4836,6 +5480,37 @@
       saveAll();
     });
 
+    if (E.btnSongFetch){
+      E.btnSongFetch.addEventListener("click", ()=>{
+        loadPlaylistFromUrl(E.songUrl ? E.songUrl.value : "");
+      });
+    }
+    if (E.songSearch){
+      E.songSearch.addEventListener("input", ()=>{
+        songQuery = E.songSearch.value || "";
+        renderSongList();
+      });
+    }
+    if (E.songSort){
+      E.songSort.addEventListener("change", ()=>{
+        songSort = E.songSort.value || "playlist";
+        renderSongList();
+      });
+    }
+    if (E.songFile){
+      E.songFile.addEventListener("change", async ()=>{
+        const file = E.songFile.files && E.songFile.files[0];
+        if (!file) return;
+        try{
+          const text = await file.text();
+          songLibrary = parseIrealPlaylist(text);
+          renderSongList();
+        } catch {
+          setSongStatus("Could not read file.");
+        }
+      });
+    }
+
     // limiter checkboxes -> state
     document.getElementById("cardLimiters").addEventListener("change", (ev)=>{
       const t = ev.target;
@@ -4994,6 +5669,11 @@
 
     bindUI();
     updateUndoRedoButtons();
+    if (E.songUrl){
+      E.songUrl.value = DEFAULT_PLAYLIST_URL;
+      loadPlaylistFromUrl(E.songUrl.value);
+    }
+
   }
 
   boot();
