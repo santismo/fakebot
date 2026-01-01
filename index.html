@@ -1231,8 +1231,11 @@
     if (ch.family === "dom"){
       const hasSharp11Dom = pcs.includes(pc(ch.root+6));
       const hasFlat13 = pcs.includes(pc(ch.root+8)) || (ch.symbol||"").includes("b13");
-      if (hasFlat13) return ["mixoB13","altered"];
-      return hasSharp11Dom ? ["lydianDom","mixo","altered"] : ["mixo","lydianDom","altered"];
+      const base = hasFlat13
+        ? ["mixoB13","altered"]
+        : (hasSharp11Dom ? ["lydianDom","mixo","altered"] : ["mixo","lydianDom","altered"]);
+      base.push("harmonicMinor","melodicMinor");
+      return base;
     }
     if (ch.family === "sus") return ["mixo","dorian"];
     if (ch.family === "hdim") return ["locrian"];
@@ -1274,6 +1277,25 @@
       if (mode==="mixoB13") score += 2.2;
       if (mode==="altered") score += 0.6;
       if (mode==="mixo" || mode==="lydianDom") score -= 0.6;
+    }
+
+    if (ch?.family === "dom" && nextCh){
+      const targetRoot = pc(nextCh.root);
+      const isVtoI = pc(ch.root + 5) === targetRoot;
+      if (isVtoI && pc(scaleRoot) === targetRoot){
+        const nextFam = nextCh.family;
+        const toMinor = nextFam === "min" || nextFam === "minmaj" || nextFam === "hdim" || nextFam === "dim";
+        if (toMinor){
+          if (mode === "melodicMinor") score += 3.2;
+          if (mode === "harmonicMinor") score += 1.4;
+        } else if (nextFam === "dom"){
+          if (mode === "harmonicMinor") score += 2.6;
+          if (mode === "melodicMinor") score += 0.9;
+        } else {
+          if (mode === "harmonicMinor") score += 2.4;
+          if (mode === "melodicMinor") score += 1.2;
+        }
+      }
     }
     return score;
   }
@@ -1345,6 +1367,32 @@
 
     const limit = clamp(Number(overrideLimit ?? state.scalesUsed)||1, 1, Math.max(1, Object.keys(SCALES).length));
 
+    const contextSpan = 4;
+    const sameChord = (a,b)=>{
+      if (!a || !b) return false;
+      const aSlash = (a.slash!=null) ? pc(a.slash) : null;
+      const bSlash = (b.slash!=null) ? pc(b.slash) : null;
+      return pc(a.root)===pc(b.root) && a.symbol===b.symbol && aSlash===bSlash;
+    };
+    const findPrevContext = (idx)=>{
+      const cur = slots[idx]?.chord || null;
+      for (let i=idx-1, steps=0; i>=0 && steps<contextSpan; i--, steps++){
+        const cand = slots[i]?.chord || null;
+        if (!cand) continue;
+        if (!cur || !sameChord(cur, cand)) return cand;
+      }
+      return slots[idx-1]?.chord || null;
+    };
+    const findNextContext = (idx)=>{
+      const cur = slots[idx]?.chord || null;
+      for (let i=idx+1, steps=0; i<slots.length && steps<contextSpan; i++, steps++){
+        const cand = slots[i]?.chord || null;
+        if (!cand) continue;
+        if (!cur || !sameChord(cur, cand)) return cand;
+      }
+      return slots[idx+1]?.chord || null;
+    };
+
     // Single-scale hard clamp: force all chords to key root/mode
     if (limit===1 && SCALES[state.keyMode]){
       const rootPc = pc(state.keyRoot);
@@ -1385,33 +1433,58 @@
       return pcs.join(",");
     };
 
+    const keyMode = SCALES[state.keyMode] ? state.keyMode : null;
+    const keyCenter = (keyMode != null) ? pc(state.keyRoot) : null;
+    const keySig = (keyMode != null) ? sigFor(keyCenter, keyMode) : null;
+
     // collect candidate modes per chord (root fixed to chord root)
     const sigTotals = new Map();
     const sigMeta = new Map(); // sig -> {root, mode}
     const candPer = slots.map((slot, idx)=>{
-      const prev = slots[idx-1]?.chord || null;
-      const next = slots[idx+1]?.chord || null;
+      const prev = findPrevContext(idx);
+      const next = findNextContext(idx);
       const chord = slot.chord;
       const cand = [];
+      const seen = new Set();
+      const addCandidate = (mode, center)=>{
+        const sig = sigFor(center, mode);
+        const key = `${sig}|${center}|${mode}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const score = scoreModeForContext(chord, mode, prev, next, center);
+        sigTotals.set(sig, (sigTotals.get(sig)||0) + score);
+        if (!sigMeta.has(sig)) sigMeta.set(sig, {root:center, mode});
+        cand.push({mode, score, center, sig});
+      };
       const modes = candidateModesWithLimit(chord, limit);
       modes.forEach(mode=>{
         const centers = candidateCentersForMode(chord, mode);
-        centers.forEach(center=>{
-          const score = scoreModeForContext(chord, mode, prev, next, center);
-          const sig = sigFor(center, mode);
-          sigTotals.set(sig, (sigTotals.get(sig)||0) + score);
-          if (!sigMeta.has(sig)) sigMeta.set(sig, {root:center, mode});
-          cand.push({mode, score, center, sig});
-        });
+        centers.forEach(center=> addCandidate(mode, center));
       });
+      if (keyMode && chordFits(chord, keyCenter, keyMode)) addCandidate(keyMode, keyCenter);
       if (!cand.length){
         const fallbackMode = modes[0] || "mixo";
         const center = pc(chord.root);
-        const sig = sigFor(center, fallbackMode);
-        if (!sigMeta.has(sig)) sigMeta.set(sig, {root:center, mode:fallbackMode});
-        cand.push({mode:fallbackMode, score:scoreModeForContext(chord, fallbackMode, prev, next, center), center, sig});
+        addCandidate(fallbackMode, center);
       }
       return cand;
+    });
+
+    const sigCounts = new Map();
+    candPer.forEach(list=>{
+      const seen = new Set();
+      list.forEach(c=>{
+        if (seen.has(c.sig)) return;
+        seen.add(c.sig);
+        sigCounts.set(c.sig, (sigCounts.get(c.sig)||0) + 1);
+      });
+    });
+
+    const sigFirst = new Map();
+    candPer.forEach((list, idx)=>{
+      list.forEach(c=>{
+        if (!sigFirst.has(c.sig)) sigFirst.set(c.sig, idx);
+      });
     });
 
     // Exact cover (limit=2): pick signatures that cover all chords with best total score
@@ -1486,6 +1559,55 @@
     }
     const paletteSet = new Set(palette);
 
+    const sigSetCache = new Map();
+    const sigToSet = (sig)=>{
+      if (!sigSetCache.has(sig)){
+        const set = new Set(String(sig).split(",").filter(Boolean).map(n=>Number(n)));
+        sigSetCache.set(sig, set);
+      }
+      return sigSetCache.get(sig);
+    };
+    const sharedCount = (aSet, bSet)=>{
+      if (!aSet || !bSet) return 0;
+      let n = 0;
+      for (const p of aSet) if (bSet.has(p)) n++;
+      return n;
+    };
+    const pcDist = (a,b)=>{
+      const d1 = (a - b + 12) % 12;
+      const d2 = (b - a + 12) % 12;
+      return Math.min(d1, d2);
+    };
+    const totalSlots = Math.max(1, slots.length);
+    const baseScoreFor = (c)=>{
+      let s = c.score;
+      const sig = c.sig;
+      const sigTotal = sigTotals.get(sig) || 0;
+      const sigCount = sigCounts.get(sig) || 0;
+      s += (sigTotal / totalSlots) * 0.08;
+      s += (sigCount / totalSlots) * 1.6;
+      if (sigCount <= 1) s -= 0.35;
+      const firstIdx = sigFirst.get(sig);
+      if (firstIdx != null){
+        const early = (totalSlots - firstIdx) / totalSlots;
+        s += early * 0.7;
+      }
+      if (keySig && sig === keySig) s += 2.6;
+      return s;
+    };
+    const transitionScore = (prev, cur)=>{
+      if (!prev || !cur) return 0;
+      let s = 0;
+      if (prev.sig === cur.sig) s += 2.1;
+      else s -= 0.6;
+      const shared = sharedCount(sigToSet(prev.sig), sigToSet(cur.sig));
+      s += shared * 0.35;
+      s -= pcDist(prev.center, cur.center) * 0.25;
+      if (prev.center === cur.center) s += 0.7;
+      if (prev.mode === cur.mode && prev.center === cur.center) s += 0.25;
+      return s;
+    };
+
     function nearestScaleTone(rootPc, scaleSet){
       let best = rootPc;
       let bestDist = 99;
@@ -1532,46 +1654,73 @@
       Object.assign(slot.chord, replacement);
     }
 
-    for (let i=0;i<slots.length;i++){
-      const chord = slots[i].chord;
-      const cand = candPer[i];
-      let chosen = null;
-      let best = -1e9;
-
-      // best candidate within palette (same signature) that fits
-      for (const c of cand){
-        if (!paletteSet.has(c.sig)) continue;
-        if (!chordFits(chord, c.center, c.mode)) continue;
-        if (c.score>best){
-          best = c.score;
-          chosen = c;
-        }
-      }
-
-      if (!chosen){
-        // best palette meta that fits
+    const candLists = slots.map((slot, idx)=>{
+      const chord = slot.chord;
+      let list = candPer[idx].filter(c=> paletteSet.has(c.sig));
+      if (!list.length){
+        list = [];
         for (const sig of palette){
           const meta = sigMeta.get(sig);
           if (!meta) continue;
           if (!chordFits(chord, meta.root, meta.mode)) continue;
-          const s = scoreModeForContext(chord, meta.mode, null, null, meta.root);
-          if (s > best){
-            best = s;
-            chosen = {mode:meta.mode, score:s, center:meta.root, sig};
+          const score = scoreModeForContext(chord, meta.mode, null, null, meta.root);
+          list.push({mode:meta.mode, score, center:meta.root, sig});
+        }
+      }
+      if (!list.length) list = candPer[idx].slice();
+      return list;
+    });
+
+    const dp = [];
+    const back = [];
+    for (let i=0;i<candLists.length;i++){
+      const list = candLists[i];
+      dp[i] = new Array(list.length).fill(-Infinity);
+      back[i] = new Array(list.length).fill(-1);
+      for (let j=0;j<list.length;j++){
+        const base = baseScoreFor(list[j]);
+        if (i===0){
+          dp[i][j] = base;
+          continue;
+        }
+        for (let k=0;k<candLists[i-1].length;k++){
+          const val = dp[i-1][k] + base + transitionScore(candLists[i-1][k], list[j]);
+          if (val > dp[i][j]){
+            dp[i][j] = val;
+            back[i][j] = k;
           }
         }
       }
+    }
 
+    let endIdx = 0;
+    let bestScore = -Infinity;
+    const last = dp[dp.length - 1] || [];
+    for (let i=0;i<last.length;i++){
+      if (last[i] > bestScore){
+        bestScore = last[i];
+        endIdx = i;
+      }
+    }
+    const chosenIdx = new Array(candLists.length).fill(0);
+    for (let i=candLists.length-1;i>=0;i--){
+      chosenIdx[i] = endIdx;
+      endIdx = back[i][endIdx] != null ? back[i][endIdx] : 0;
+    }
+
+    for (let i=0;i<slots.length;i++){
+      const chord = slots[i].chord;
+      const list = candLists[i];
+      const chosen = list[chosenIdx[i]] || list[0];
       if (!chosen){
-        const fallbackSig = palette[0] || cand[0]?.sig || sigFor(pc(chord.root), "mixo");
+        const fallbackSig = palette[0] || candPer[i][0]?.sig || sigFor(pc(chord.root), "mixo");
         const meta = sigMeta.get(fallbackSig) || {root: pc(chord.root), mode:"mixo"};
         retuneChordToScale(slots[i], meta.root, meta.mode);
         continue;
       }
 
-      slots[i].chord.mode = chosen.mode || "mixo";
-      const centerRoot = (chosen && typeof chosen.center==="number") ? chosen.center : pc(chord.root);
-      slots[i].chord.scaleRoot = pc(centerRoot);
+      chord.mode = chosen.mode || "mixo";
+      chord.scaleRoot = pc((chosen && typeof chosen.center==="number") ? chosen.center : chord.root);
     }
 
     // Hard cap: if any extra signatures slipped through, remap them into the top `limit`
@@ -4217,14 +4366,19 @@
 
       // Length
       const dur = (bar.split ? halfSeconds() : barSeconds());
+      const isSplit = !!bar.split;
+      const isSecondHalf = isSplit && atHalf===1;
+      const splitScale = isSplit ? 0.65 : 1;
+      const halfScale = isSecondHalf ? 0.85 : 1;
+      const density = splitScale * halfScale;
 
       // --- Keys comp ---
       // Style maps to pattern density
       const comp = state.compStyle;
       const kBusy = clamp(state.keysComplex/100,0,1);
-      const kFill = clamp(state.keysFill/100,0,1);
+      const kFill = clamp(state.keysFill/100,0,1) * density;
 
-      const stabCount = (() => {
+      let stabCount = (() => {
         if (comp==="twoStabs") return 2;
         if (comp==="fourComp") return 4;
         if (comp==="charleston") return 2;
@@ -4241,6 +4395,8 @@
         if (comp==="edmStab") return 2;
         return 2;
       })();
+      if (isSplit) stabCount = Math.max(1, Math.round(stabCount * 0.6));
+      if (isSecondHalf) stabCount = Math.max(1, Math.round(stabCount * 0.85));
 
       const offsets = [];
       if (stabCount===1){
@@ -4258,6 +4414,10 @@
         offsets.push(dur*0.875);
       } else {
         for (let i=0;i<stabCount;i++) offsets.push((dur*(i/stabCount)));
+      }
+      if (isSplit && offsets.length > 1){
+        const keep = Math.max(1, Math.round(offsets.length * 0.6));
+        offsets.length = keep;
       }
 
       // add a tiny randomized humanization
@@ -4282,16 +4442,19 @@
       }
 
       // --- Bass ---
-      const bBusy = clamp(state.bassComplex/100,0,1);
-      const bFill = clamp(state.bassFill/100,0,1);
+      const bBusy = clamp(state.bassComplex/100,0,1) * density;
+      const bFill = clamp(state.bassFill/100,0,1) * density;
       const bassNotes = [];
 
       // basic walking: 1, 5, approach tones
       bassNotes.push({t:0, pc: pc(ch.root), len: dur*0.48, v: 0.75});
-      if (dur > halfSeconds()*0.99){ // full bar
-        bassNotes.push({t:dur*0.50, pc: pc(ch.root+7), len: dur*0.32, v: 0.72});
-      } else {
-        bassNotes.push({t:dur*0.50, pc: pc(ch.root+7), len: dur*0.24, v: 0.70});
+      const addFifth = !isSplit || !isSecondHalf;
+      if (addFifth){
+        if (dur > halfSeconds()*0.99){ // full bar
+          bassNotes.push({t:dur*0.50, pc: pc(ch.root+7), len: dur*0.32, v: 0.72});
+        } else {
+          bassNotes.push({t:dur*0.50, pc: pc(ch.root+7), len: dur*0.24, v: 0.70});
+        }
       }
       if (chance(bBusy*0.55)){
         bassNotes.push({t:dur*0.25, pc: pc(ch.root+12), len: dur*0.20, v: 0.60});
@@ -4306,102 +4469,112 @@
 
       // --- Drums ---
       const dLvl = clamp(state.drumsLevel/100,0,1);
-      const dBusy = clamp(state.drumsComplex/100,0,1);
-      const dFill = clamp(state.drumsFill/100,0,1);
+      const dBusy = clamp(state.drumsComplex/100,0,1) * density;
+      const dFill = clamp(state.drumsFill/100,0,1) * density;
 
       const groove = state.grooveStyle;
-      const sub = 8; // 8th grid
-      const step = dur / (sub*2); // 16th-ish
+      const beatCount = isSplit ? 2 : 4;
+      const step = dur / (beatCount*4); // 16th-ish
+      const beat = step * 4;
+      const mid = beat * Math.max(1, Math.floor(beatCount/2));
+      const late = dur - step*2;
+      const late2 = dur - step*6;
       const swingAmt = (clamp(state.swing,50,75)-50)/25; // 0..1
       const swingDelay = step*0.45*swingAmt;
 
+      const inDur = (t)=> t < (dur - 0.002);
       function hit(kind, when, vel){
         if (dLvl<=0.01) return;
         AudioKit.playDrumHit(kind, state.drumsPreset, t0 + when, clamp(vel*dLvl,0,1));
       }
+      const hitAt = (kind, when, vel)=>{
+        if (!inDur(when)) return;
+        hit(kind, when, vel);
+      };
 
       // ride pattern (jazzy)
       if (groove==="swing" || groove==="free"){
-        const rideBase = [0, step*4, step*8, step*12]; // quarters
+        const rideBase = [];
+        for (let i=0;i<beatCount;i++) rideBase.push(i*beat);
         rideBase.forEach((q, idx)=>{
-          hit("ride", q, 0.55 + 0.18*(idx===0));
+          hitAt("ride", q, 0.55 + 0.18*(idx===0));
           // skip/and
-          hit("ride", q + step*3 + swingDelay, 0.42 + 0.20*dBusy);
+          hitAt("ride", q + step*3 + swingDelay, 0.42 + 0.20*dBusy);
         });
-        if (chance(0.25 + 0.45*dBusy)) hit("hat", step*8, 0.42);
+        if (chance(0.25 + 0.45*dBusy)) hitAt("hat", mid, 0.42);
         // light comping snare
-        if (chance(0.25 + 0.55*dBusy)) hit("snare", step*6 + human(0.004), 0.28);
-        if (chance(0.20 + 0.50*dBusy)) hit("snare", step*14 + human(0.004), 0.26);
+        if (chance(0.25 + 0.55*dBusy)) hitAt("snare", step*6 + human(0.004), 0.28);
+        if (chance(0.20 + 0.50*dBusy)) hitAt("snare", late + human(0.004), 0.26);
         // occasional kick
-        if (chance(0.18 + 0.35*dBusy)) hit("kick", step*8 + human(0.004), 0.35);
+        if (chance(0.18 + 0.35*dBusy)) hitAt("kick", mid + human(0.004), 0.35);
       }
       else if (groove==="brushBallad"){
         // gentle hats + snare swish
-        hit("hat", 0, 0.35);
-        hit("hat", step*8, 0.33);
-        if (chance(0.35 + 0.35*dBusy)) hit("snare", step*10, 0.25);
-        if (chance(0.20 + 0.30*dBusy)) hit("kick", step*0, 0.22);
+        hitAt("hat", 0, 0.35);
+        hitAt("hat", mid, 0.33);
+        if (chance(0.35 + 0.35*dBusy)) hitAt("snare", late2, 0.25);
+        if (chance(0.20 + 0.30*dBusy)) hitAt("kick", step*0, 0.22);
       }
       else if (groove==="bossa" || groove==="samba" || groove==="afroCuban"){
         // simple clave-ish
-        hit("hat", 0, 0.35);
-        hit("hat", step*4, 0.30);
-        hit("hat", step*8, 0.35);
-        hit("hat", step*12, 0.30);
-        hit("kick", 0, 0.35);
-        hit("kick", step*8, 0.30);
-        if (chance(0.35 + 0.35*dBusy)) hit("snare", step*6, 0.25);
-        if (chance(0.35 + 0.35*dBusy)) hit("snare", step*14, 0.25);
+        hitAt("hat", 0, 0.35);
+        hitAt("hat", step*4, 0.30);
+        hitAt("hat", mid, 0.35);
+        hitAt("hat", mid + beat, 0.30);
+        hitAt("kick", 0, 0.35);
+        hitAt("kick", mid, 0.30);
+        if (chance(0.35 + 0.35*dBusy)) hitAt("snare", step*6, 0.25);
+        if (chance(0.35 + 0.35*dBusy)) hitAt("snare", late, 0.25);
       }
       else if (groove==="funk" || groove==="hiphop"){
-        hit("hat", 0, 0.30);
-        hit("hat", step*4 + swingDelay, 0.28);
-        hit("hat", step*8, 0.30);
-        hit("hat", step*12 + swingDelay, 0.28);
-        hit("kick", 0, 0.42);
-        if (chance(0.4 + 0.4*dBusy)) hit("kick", step*10, 0.35);
-        hit("snare", step*8, 0.38);
+        hitAt("hat", 0, 0.30);
+        hitAt("hat", step*4 + swingDelay, 0.28);
+        hitAt("hat", mid, 0.30);
+        hitAt("hat", mid + beat + swingDelay, 0.28);
+        hitAt("kick", 0, 0.42);
+        if (chance(0.4 + 0.4*dBusy)) hitAt("kick", late2, 0.35);
+        hitAt("snare", mid, 0.38);
       }
       else if (groove==="house" || groove==="techno" || groove==="disco"){
-        hit("kick", 0, 0.55);
-        hit("kick", step*4, 0.55);
-        hit("kick", step*8, 0.55);
-        hit("kick", step*12, 0.55);
-        hit("hat", step*2, 0.28);
-        hit("hat", step*6, 0.28);
-        hit("hat", step*10, 0.28);
-        hit("hat", step*14, 0.28);
-        if (groove==="disco") hit("snare", step*8, 0.35);
+        hitAt("kick", 0, 0.55);
+        hitAt("kick", step*4, 0.55);
+        hitAt("kick", mid, 0.55);
+        hitAt("kick", mid + beat, 0.55);
+        hitAt("hat", step*2, 0.28);
+        hitAt("hat", step*6, 0.28);
+        hitAt("hat", late2, 0.28);
+        hitAt("hat", late, 0.28);
+        if (groove==="disco") hitAt("snare", mid, 0.35);
       }
       else if (groove==="dnb" || groove==="breaks"){
-        hit("kick", 0, 0.55);
-        hit("snare", step*8, 0.45);
-        if (chance(0.5 + 0.4*dBusy)) hit("kick", step*6, 0.40);
-        if (chance(0.5 + 0.4*dBusy)) hit("snare", step*14, 0.34);
-        hit("hat", step*2, 0.28);
-        hit("hat", step*4, 0.26);
-        hit("hat", step*6, 0.28);
-        hit("hat", step*10, 0.26);
-        hit("hat", step*12, 0.28);
+        hitAt("kick", 0, 0.55);
+        hitAt("snare", mid, 0.45);
+        if (chance(0.5 + 0.4*dBusy)) hitAt("kick", step*6, 0.40);
+        if (chance(0.5 + 0.4*dBusy)) hitAt("snare", late, 0.34);
+        hitAt("hat", step*2, 0.28);
+        hitAt("hat", step*4, 0.26);
+        hitAt("hat", step*6, 0.28);
+        hitAt("hat", late2, 0.26);
+        hitAt("hat", mid + beat, 0.28);
       }
       else if (groove==="rock" || groove==="shuffle"){
-        hit("kick", 0, 0.55);
-        hit("snare", step*8, 0.50);
-        if (chance(0.45 + 0.35*dBusy)) hit("kick", step*10, 0.40);
-        hit("hat", step*2 + swingDelay*0.5, 0.32);
-        hit("hat", step*6 + swingDelay*0.5, 0.30);
-        hit("hat", step*10 + swingDelay*0.5, 0.32);
-        hit("hat", step*14 + swingDelay*0.5, 0.30);
+        hitAt("kick", 0, 0.55);
+        hitAt("snare", mid, 0.50);
+        if (chance(0.45 + 0.35*dBusy)) hitAt("kick", late2, 0.40);
+        hitAt("hat", step*2 + swingDelay*0.5, 0.32);
+        hitAt("hat", step*6 + swingDelay*0.5, 0.30);
+        hitAt("hat", late2 + swingDelay*0.5, 0.32);
+        hitAt("hat", late + swingDelay*0.5, 0.30);
       }
       else if (groove==="ambient"){
-        if (chance(0.25 + 0.55*dBusy)) hit("hat", step*2, 0.18);
-        if (chance(0.25 + 0.55*dBusy)) hit("ride", step*9, 0.18);
+        if (chance(0.25 + 0.55*dBusy)) hitAt("hat", step*2, 0.18);
+        if (chance(0.25 + 0.55*dBusy)) hitAt("ride", mid + step, 0.18);
       }
 
       // drum fill near end
       if (chance(dFill*0.45)){
-        hit("hat", dur*0.86, 0.22 + 0.25*dBusy);
-        hit("snare", dur*0.92, 0.22 + 0.25*dBusy);
+        hitAt("hat", dur*0.86, 0.22 + 0.25*dBusy);
+        hitAt("snare", dur*0.92, 0.22 + 0.25*dBusy);
       }
 
       // advance
