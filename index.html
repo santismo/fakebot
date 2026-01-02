@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   <title>🤖 fakebot</title>
 
+  <script src="https://cdn.jsdelivr.net/npm/js-synthesizer@1.11.0/externals/libfluidsynth-2.4.6.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-synthesizer@1.11.0/dist/js-synthesizer.min.js"></script>
+
   <style>
     :root{
       /* Page theme vars */
@@ -1048,6 +1051,31 @@
 
         <div class="splitLine"></div>
 
+        <div class="modalSubTitle">SoundFont</div>
+        <div class="modalGrid">
+          <div class="miniCtl" style="grid-column: 1 / -1;">
+            <label>SoundFont engine</label>
+            <label class="chip" style="width:100%;justify-content:space-between;margin:0;">
+              <span>Enable SoundFont</span>
+              <input type="checkbox" id="sfEnabled" checked>
+            </label>
+          </div>
+          <div class="miniCtl" style="grid-column: 1 / -1;">
+            <label>SoundFont URL</label>
+            <div class="inline">
+              <input class="textInput" type="text" id="sfUrl" placeholder="https://...">
+              <button class="btn tiny" id="btnSfLoad" type="button">Load</button>
+            </div>
+            <div class="msg" id="sfStatus" style="margin:8px 0 0 0;"> </div>
+          </div>
+          <div class="miniCtl" style="grid-column: 1 / -1;">
+            <label>Manual upload (.sf2)</label>
+            <input class="fileInput" type="file" id="sfFile" accept=".sf2,application/octet-stream">
+          </div>
+        </div>
+
+        <div class="splitLine"></div>
+
         <div class="modalSubTitle">Songs (advanced)</div>
         <div class="modalGrid">
           <div class="miniCtl" style="grid-column: 1 / -1;">
@@ -1759,6 +1787,8 @@
   }
 
   /* ---------- Defaults / State ---------- */
+  const DEFAULT_SOUNDFONT_URL = "https://raw.githubusercontent.com/santismo/fakebot/main/Roland.SC-55.sf2";
+
   const DEFAULTS = {
     bars: 4,
     halfEnabled: false,
@@ -1798,7 +1828,9 @@
     morphBg: true,
     kbOct: 2, /* 2 octaves = 14 white keys (default) */
     playbackOrder: [],
-    currentSongTitle: ""
+    currentSongTitle: "",
+    soundFontUrl: DEFAULT_SOUNDFONT_URL,
+    soundFontEnabled: true
   };
 
   const state = {
@@ -1844,6 +1876,8 @@
     kbOct: DEFAULTS.kbOct,
     playbackOrder: structuredClone(DEFAULTS.playbackOrder),
     currentSongTitle: DEFAULTS.currentSongTitle,
+    soundFontUrl: DEFAULTS.soundFontUrl,
+    soundFontEnabled: DEFAULTS.soundFontEnabled,
     allowedCenters: [],
 
     weights: null,
@@ -1908,6 +1942,11 @@
     songUrl: document.getElementById("songUrl"),
     btnSongFetch: document.getElementById("btnSongFetch"),
     songFile: document.getElementById("songFile"),
+    sfEnabled: document.getElementById("sfEnabled"),
+    sfUrl: document.getElementById("sfUrl"),
+    btnSfLoad: document.getElementById("btnSfLoad"),
+    sfFile: document.getElementById("sfFile"),
+    sfStatus: document.getElementById("sfStatus"),
     songSearch: document.getElementById("songSearch"),
     songSort: document.getElementById("songSort"),
     btnSongRandom: document.getElementById("btnSongRandom"),
@@ -2687,6 +2726,16 @@
     return u;
   }
 
+  function normalizeSoundFontUrl(url){
+    let u = String(url || "").trim();
+    if (!u) return "";
+    const m = u.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^#?]+)/i);
+    if (m){
+      u = `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}`;
+    }
+    return u;
+  }
+
   function parseSongKey(key){
     if (!key) return null;
     const clean = String(key).replace(/\s+/g, "");
@@ -3230,6 +3279,10 @@
     if (E.songStatus) E.songStatus.textContent = text;
   }
 
+  function setSoundFontStatus(text){
+    if (E.sfStatus) E.sfStatus.textContent = text;
+  }
+
   function renderSongList(){
     if (!E.songList || !E.songStatus) return;
     E.songList.innerHTML = "";
@@ -3299,6 +3352,44 @@
     } catch {
       setSongStatus("Could not load playlist. Check your connection.");
       if (E.songList) E.songList.innerHTML = "";
+    }
+  }
+
+  async function loadSoundFontFromUrl(url){
+    const normalized = normalizeSoundFontUrl(url);
+    if (!normalized){
+      setSoundFontStatus("SoundFont URL is empty.");
+      return false;
+    }
+    setSoundFontStatus(`Loading ${normalized}...`);
+    try{
+      await AudioKit.resume();
+      await AudioKit.loadSoundFontUrl(normalized);
+      state.soundFontUrl = normalized;
+      setSoundFontStatus(`Loaded SoundFont: ${normalized.split("/").slice(-1)[0]}`);
+      AudioKit.updateSoundFontPrograms();
+      saveAll();
+      return true;
+    } catch (err){
+      setSoundFontStatus("SoundFont load failed.");
+      return false;
+    }
+  }
+
+  async function loadSoundFontFromFile(file){
+    if (!file) return false;
+    setSoundFontStatus(`Loading ${file.name}...`);
+    try{
+      await AudioKit.resume();
+      const buf = await file.arrayBuffer();
+      await AudioKit.loadSoundFontBuffer(buf, file.name);
+      setSoundFontStatus(`Loaded SoundFont: ${file.name}`);
+      AudioKit.updateSoundFontPrograms();
+      saveAll();
+      return true;
+    } catch {
+      setSoundFontStatus("SoundFont load failed.");
+      return false;
     }
   }
 
@@ -3852,12 +3943,108 @@
     renderPianoForActive();
   }
 
+  /* ---------- SoundFont mappings ---------- */
+  const SF_KEYS = {
+    ep: 4,
+    piano: 0,
+    organ: 16,
+    harpsichord: 6,
+    accordion: 21,
+    strings: 48,
+    pad: 88,
+    choirPad: 52,
+    noisePad: 96,
+    fm: 5,
+    chip: 80,
+    bell: 112,
+    glass: 98,
+    celesta: 8,
+    vibes: 11,
+    marimba: 12,
+    harp: 46,
+    pluck2: 45,
+    guitarish: 25,
+    clavBright: 7,
+  };
+
+  const SF_BASS = {
+    upright: 32,
+    contra: 33,
+    fretless: 35,
+    pizz: 33,
+    round: 33,
+    sub: 38,
+    pluck: 36,
+    pickBass: 34,
+    muted: 39,
+    fmBass: 38,
+    rubber: 37,
+    acid: 38,
+    reese: 39,
+    squareBass: 38,
+    wobble: 39,
+    mono: 38,
+  };
+
+  const SF_DRUMS = {
+    jazz: 32,
+    swing: 32,
+    shuffle: 0,
+    brushes: 40,
+    tight: 8,
+    rock: 16,
+    room: 8,
+    disco: 0,
+    lofi: 0,
+    minimal: 0,
+    ambient: 48,
+    electro: 24,
+    analog: 24,
+    house: 24,
+    trap: 24,
+    breaks: 0,
+    dnb: 24,
+    techno: 24,
+    boomBap: 0,
+    perc: 0,
+    latinKit: 0,
+    orchestral: 48,
+    free: 32,
+  };
+
+  const SF_DRUM_NOTES = {
+    kick: 36,
+    snare: 38,
+    hat: 42,
+    ride: 51,
+  };
+
+  function soundFontProgramsForState(){
+    return {
+      keys: SF_KEYS[state.keysPreset] ?? 4,
+      bass: SF_BASS[state.bassPreset] ?? 32,
+      drums: SF_DRUMS[state.drumsPreset] ?? 0,
+    };
+  }
+
   /* ---------- Audio ---------- */
   const AudioKit = (() => {
     let ctx = null;
     let master = null;
     let comp = null;
     let limiter = null;
+
+    const sf = {
+      synth: null,
+      node: null,
+      sfontId: null,
+      ready: false,
+      loading: false,
+      lastUrl: "",
+      loadError: "",
+      timers: new Set()
+    };
+    const SF_CHANNELS = { keys: 0, bass: 1, drums: 9 };
 
     function ensure(){
       if (ctx) return ctx;
@@ -3889,6 +4076,116 @@
 
     function now(){ return ensure().currentTime; }
     function midiToHz(m){ return 440 * Math.pow(2, (m-69)/12); }
+
+    function soundFontActive(){
+      return !!(state.soundFontEnabled && sf.ready && sf.synth);
+    }
+
+    async function ensureSoundFont(){
+      ensure();
+      if (sf.synth || sf.loading) return;
+      sf.loading = true;
+      sf.loadError = "";
+      try{
+        if (!window.JSSynth) throw new Error("SoundFont engine unavailable.");
+        await window.JSSynth.waitForReady();
+        const synth = new window.JSSynth.Synthesizer();
+        synth.init(ctx.sampleRate, { initialGain: 0.7, midiChannelCount: 16 });
+        const node = synth.createAudioNode(ctx, 4096);
+        node.connect(comp);
+        sf.synth = synth;
+        sf.node = node;
+      } catch (err){
+        sf.loadError = err && err.message ? err.message : "SoundFont init failed.";
+        throw err;
+      } finally {
+        sf.loading = false;
+      }
+    }
+
+    async function loadSoundFontBuffer(buffer, urlLabel=""){
+      await ensureSoundFont();
+      if (sf.sfontId != null){
+        try{ sf.synth.unloadSFont(sf.sfontId); }catch{}
+      }
+      const id = await sf.synth.loadSFont(buffer);
+      sf.sfontId = id;
+      sf.ready = true;
+      sf.loadError = "";
+      if (urlLabel) sf.lastUrl = urlLabel;
+      updateSoundFontPrograms();
+      return id;
+    }
+
+    async function loadSoundFontUrl(url){
+      const normalized = normalizeSoundFontUrl(url);
+      if (!normalized) throw new Error("Missing SoundFont URL.");
+      const res = await fetch(normalized, { cache: "no-store" });
+      if (!res.ok) throw new Error("SoundFont fetch failed.");
+      const buf = await res.arrayBuffer();
+      await loadSoundFontBuffer(buf, normalized);
+    }
+
+    function resolveDrumProgram(requested){
+      const prog = Number.isFinite(requested) ? requested : 0;
+      const getter = sf.synth && sf.synth.getSFontPreset;
+      if (typeof getter !== "function") return { bank: 128, prog };
+      const hasPreset = (bank, program)=>{
+        try{
+          const preset = (getter.length >= 3)
+            ? getter.call(sf.synth, sf.sfontId, bank, program)
+            : getter.call(sf.synth, bank, program);
+          return !!preset;
+        }catch{
+          return false;
+        }
+      };
+
+      if (hasPreset(128, prog)) return { bank: 128, prog };
+      if (hasPreset(0, prog)) return { bank: 0, prog };
+      if (hasPreset(128, 0)) return { bank: 128, prog: 0 };
+      return { bank: 0, prog: 0 };
+    }
+
+    function updateSoundFontPrograms(){
+      if (!soundFontActive()) return;
+      if (sf.sfontId == null) return;
+      const prog = soundFontProgramsForState();
+      const drum = resolveDrumProgram(prog.drums);
+      sf.synth.midiProgramSelect(SF_CHANNELS.keys, sf.sfontId, 0, prog.keys);
+      sf.synth.midiProgramSelect(SF_CHANNELS.bass, sf.sfontId, 0, prog.bass);
+      sf.synth.midiProgramSelect(SF_CHANNELS.drums, sf.sfontId, drum.bank, drum.prog);
+      if (typeof sf.synth.midiControlChange === "function"){
+        sf.synth.midiControlChange(SF_CHANNELS.drums, 7, 127);
+      }
+    }
+
+    function sfScheduleNote(channel, midi, vel, t0, dur){
+      if (!soundFontActive()) return;
+      const v = Math.max(1, Math.min(127, Math.round(vel * 127)));
+      const tNow = now();
+      const onMs = Math.max(0, (t0 - tNow) * 1000);
+      const offMs = Math.max(0, (t0 + dur - tNow) * 1000);
+      const onId = setTimeout(()=>{
+        sf.timers.delete(onId);
+        sf.synth.midiNoteOn(channel, midi, v);
+      }, onMs);
+      const offId = setTimeout(()=>{
+        sf.timers.delete(offId);
+        sf.synth.midiNoteOff(channel, midi);
+      }, offMs);
+      sf.timers.add(onId);
+      sf.timers.add(offId);
+    }
+
+    function soundFontAllNotesOff(){
+      if (!soundFontActive()) return;
+      sf.timers.forEach(id=> clearTimeout(id));
+      sf.timers.clear();
+      sf.synth.midiAllNotesOff(SF_CHANNELS.keys);
+      sf.synth.midiAllNotesOff(SF_CHANNELS.bass);
+      sf.synth.midiAllNotesOff(SF_CHANNELS.drums);
+    }
 
     function env(gainNode, t0, a, d, s, r, peak=0.8){
       const t1 = t0 + a;
@@ -4143,6 +4440,13 @@
     return mids;
   }
     function playChord(ch, preset, t0, dur, vel=0.7){
+      if (soundFontActive()){
+        const cfg = KEY_PRESETS[preset] || KEY_PRESETS.ep;
+        const vStyle = cfg.vStyle || "closed";
+        const mids = chordVoicingMidi(ch, vStyle);
+        mids.forEach(m=> sfScheduleNote(SF_CHANNELS.keys, m, vel, t0, dur));
+        return;
+      }
       const c = ensure();
       const {out} = createVoiceChain();
 
@@ -4181,6 +4485,13 @@
       release(t0 + dur);
     }
     function playBass(rootPc, preset, t0, dur, vel=0.8){
+      if (soundFontActive()){
+        let m = 40 + pc(rootPc);
+        while (m < 36) m += 12;
+        while (m > 52) m -= 12;
+        sfScheduleNote(SF_CHANNELS.bass, m, vel, t0, dur);
+        return;
+      }
       const c = ensure();
       const {out} = createVoiceChain();
 
@@ -4224,6 +4535,13 @@
       rel(t0 + dur);
     }
     function playDrumHit(kind, preset, t0, vel=0.8){
+      if (soundFontActive()){
+        const note = SF_DRUM_NOTES[kind] || 36;
+        const len = (kind==="ride") ? 0.45 : (kind==="hat" ? 0.12 : 0.20);
+        const v = Math.min(1, vel * 1.25);
+        sfScheduleNote(SF_CHANNELS.drums, note, v, t0, len);
+        return;
+      }
       const c = ensure();
       const {out} = createVoiceChain();
       const g = c.createGain();
@@ -4275,9 +4593,13 @@
       }
     }
 
-    function hardStop(){}
+    function hardStop(){ soundFontAllNotesOff(); }
 
-    return { ensure, now, resume, playChord, playBass, playDrumHit, hardStop };
+    return {
+      ensure, now, resume, playChord, playBass, playDrumHit, hardStop,
+      loadSoundFontUrl, loadSoundFontBuffer, updateSoundFontPrograms,
+      soundFontActive, soundFontAllNotesOff
+    };
   })();
 
   window.addEventListener("pointerdown", () => { AudioKit.resume(); }, { once:true, passive:true });
@@ -4468,7 +4790,7 @@
       });
 
       // --- Drums ---
-      const dLvl = clamp(state.drumsLevel/100,0,1);
+      const dLvl = clamp(state.drumsLevel/100 * 1.7, 0, 1);
       const dBusy = clamp(state.drumsComplex/100,0,1) * density;
       const dFill = clamp(state.drumsFill/100,0,1) * density;
 
@@ -4481,10 +4803,12 @@
       const late2 = dur - step*6;
       const swingAmt = (clamp(state.swing,50,75)-50)/25; // 0..1
       const swingDelay = step*0.45*swingAmt;
+      let drumHitCount = 0;
 
       const inDur = (t)=> t < (dur - 0.002);
       function hit(kind, when, vel){
         if (dLvl<=0.01) return;
+        drumHitCount++;
         AudioKit.playDrumHit(kind, state.drumsPreset, t0 + when, clamp(vel*dLvl,0,1));
       }
       const hitAt = (kind, when, vel)=>{
@@ -4577,6 +4901,11 @@
         hitAt("snare", dur*0.92, 0.22 + 0.25*dBusy);
       }
 
+      if (drumHitCount===0 && dLvl>0.01){
+        hitAt("kick", 0, 0.45);
+        hitAt("hat", mid, 0.25);
+      }
+
       // advance
       nextStep();
     }
@@ -4608,6 +4937,7 @@
       isPlaying = false;
       if (timer) window.clearTimeout(timer);
       timer = null;
+      AudioKit.hardStop();
       E.btnPlay.textContent = "▶️";
       E.btnPlay.classList.remove("primary");
       // keep UI + chord preview working after pause (bug fix)
@@ -5205,6 +5535,8 @@
       state.drumsComplex = clamp(g.dC,0,100);
       state.drumsFill = clamp(g.dF,0,100);
     }
+
+    AudioKit.updateSoundFontPrograms();
   }
 
   function randomizeGeneratorOnly(){
@@ -5364,6 +5696,7 @@
     syncUIFromState();
     renderAll();
     saveAll();
+    if (state.soundFontUrl) loadSoundFontFromUrl(state.soundFontUrl);
   }
 
   /* ---------- Style Random (keep progression) ---------- */
@@ -5533,6 +5866,10 @@
     E.kbOct.value = String(state.kbOct);
     E.kbOctNum.value = String(state.kbOct);
 
+    if (E.sfEnabled) E.sfEnabled.checked = !!state.soundFontEnabled;
+    if (E.sfUrl) E.sfUrl.value = state.soundFontUrl || DEFAULT_SOUNDFONT_URL;
+    AudioKit.updateSoundFontPrograms();
+
     setChordLimiterState(state.limiter);
     syncLocksUI();
     updateUndoRedoButtons();
@@ -5666,6 +6003,8 @@
         kbOct: state.kbOct,
         playbackOrder: state.playbackOrder,
         currentSongTitle: state.currentSongTitle,
+        soundFontUrl: state.soundFontUrl,
+        soundFontEnabled: state.soundFontEnabled,
 
         locks: {
           lockProg: state.lockProg,
@@ -5724,7 +6063,9 @@
       morphBg: saved.morphBg ?? state.morphBg,
       kbOct: saved.kbOct ?? state.kbOct,
       playbackOrder: Array.isArray(saved.playbackOrder) ? saved.playbackOrder : [],
-      currentSongTitle: saved.currentSongTitle ?? state.currentSongTitle
+      currentSongTitle: saved.currentSongTitle ?? state.currentSongTitle,
+      soundFontUrl: saved.soundFontUrl ?? state.soundFontUrl,
+      soundFontEnabled: saved.soundFontEnabled ?? state.soundFontEnabled
     });
 
     if (!Array.isArray(state.playbackOrder) || !state.playbackOrder.length){
@@ -5830,9 +6171,9 @@
     E.progressionLogic.addEventListener("change", ()=>{ state.progressionLogic = E.progressionLogic.value; saveAll(); });
     E.grooveStyle.addEventListener("change", ()=>{ state.grooveStyle = E.grooveStyle.value; saveAll(); });
     E.compStyle.addEventListener("change", ()=>{ state.compStyle = E.compStyle.value; saveAll(); });
-    E.bassPreset.addEventListener("change", ()=>{ state.bassPreset = E.bassPreset.value; saveAll(); });
-    E.keysPreset.addEventListener("change", ()=>{ state.keysPreset = E.keysPreset.value; saveAll(); });
-    E.drumsPreset.addEventListener("change", ()=>{ state.drumsPreset = E.drumsPreset.value; saveAll(); });
+    E.bassPreset.addEventListener("change", ()=>{ state.bassPreset = E.bassPreset.value; AudioKit.updateSoundFontPrograms(); saveAll(); });
+    E.keysPreset.addEventListener("change", ()=>{ state.keysPreset = E.keysPreset.value; AudioKit.updateSoundFontPrograms(); saveAll(); });
+    E.drumsPreset.addEventListener("change", ()=>{ state.drumsPreset = E.drumsPreset.value; AudioKit.updateSoundFontPrograms(); saveAll(); });
     E.genrePreset.addEventListener("change", ()=>{
       if (!state.lockStyle || !state.lockTime || !state.lockSounds){
         pushHistory();
@@ -5936,6 +6277,33 @@
         } catch {
           setSongStatus("Could not read file.");
         }
+      });
+    }
+
+    if (E.sfEnabled){
+      E.sfEnabled.addEventListener("change", ()=>{
+        state.soundFontEnabled = !!E.sfEnabled.checked;
+        if (!state.soundFontEnabled){
+          AudioKit.soundFontAllNotesOff();
+        } else if (state.soundFontUrl){
+          loadSoundFontFromUrl(state.soundFontUrl);
+        }
+        AudioKit.updateSoundFontPrograms();
+        saveAll();
+      });
+    }
+    if (E.btnSfLoad){
+      E.btnSfLoad.addEventListener("click", ()=>{
+        const url = E.sfUrl ? E.sfUrl.value : "";
+        loadSoundFontFromUrl(url);
+      });
+    }
+    if (E.sfFile){
+      E.sfFile.addEventListener("change", async ()=>{
+        const file = E.sfFile.files && E.sfFile.files[0];
+        if (!file) return;
+        await loadSoundFontFromFile(file);
+        if (E.sfFile) E.sfFile.value = "";
       });
     }
 
@@ -6100,6 +6468,7 @@
     const playlistUrl = DEFAULT_PLAYLIST_URL;
     if (E.songUrl) E.songUrl.value = playlistUrl;
     loadPlaylistFromUrl(playlistUrl);
+    if (state.soundFontUrl) loadSoundFontFromUrl(state.soundFontUrl);
 
   }
 
