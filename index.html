@@ -158,6 +158,14 @@
     .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
     .btnRow{display:flex;gap:8px;flex-wrap:wrap}
     .btnRow .btn{flex:1;min-width:120px}
+    .compactSlider{
+      flex:0 0 110px;
+      min-width:80px;
+      max-width:120px;
+      display:flex;
+      align-items:center;
+    }
+    .compactSlider input[type="range"]{width:100%}
 
     .iconBtn{
       min-height:30px;
@@ -485,10 +493,15 @@
               <button class="btn tiny" id="btnRandomAll" title="Randomize everything">🎲</button>
               <button class="btn tiny" id="btnDefaults" title="Defaults">🔄</button>
             </div>
+
             <div class="btnRow" style="margin-top:8px">
               <button class="btn tiny" id="btnUndo" title="Undo (up to 5)">↩️</button>
+              <div class="compactSlider" title="Complexity">
+                <input id="complexity" type="range" min="0" max="100" value="45" aria-label="Complexity">
+              </div>
               <button class="btn tiny" id="btnRedo" title="Redo">↪️</button>
             </div>
+            <div class="msg" id="complexityMsg" style="margin-top:6px;display:none;"> </div>
 
             <div class="row" style="margin-top:10px">
               <span class="miniStat" id="pillLine">—</span>
@@ -1067,13 +1080,6 @@
 
         <div class="modalSubTitle">SoundFont</div>
         <div class="modalGrid">
-          <div class="miniCtl" style="grid-column: 1 / -1;">
-            <label>SoundFont engine</label>
-            <label class="chip" style="width:100%;justify-content:space-between;margin:0;">
-              <span>Enable SoundFont</span>
-              <input type="checkbox" id="sfEnabled" checked>
-            </label>
-          </div>
           <div class="miniCtl" style="grid-column: 1 / -1;">
             <label>SoundFont URL</label>
             <div class="inline">
@@ -1822,6 +1828,7 @@
     tempo: 140,
     swing: 58,
     chaos: 35,
+    complexity: 45,
     rootMode: "keyed",
     progressionLogic: "jazzFunctional",
     genrePreset: "modernJazz",
@@ -1874,6 +1881,7 @@
     tempo: DEFAULTS.tempo,
     swing: DEFAULTS.swing,
     chaos: DEFAULTS.chaos,
+    complexity: DEFAULTS.complexity,
     rootMode: DEFAULTS.rootMode,
     progressionLogic: DEFAULTS.progressionLogic,
     genrePreset: DEFAULTS.genrePreset,
@@ -1992,6 +2000,8 @@
     swingNum: document.getElementById("swingNum"),
     chaos: document.getElementById("chaos"),
     chaosNum: document.getElementById("chaosNum"),
+    complexity: document.getElementById("complexity"),
+    complexityMsg: document.getElementById("complexityMsg"),
     rootMode: document.getElementById("rootMode"),
     grooveStyle: document.getElementById("grooveStyle"),
     compStyle: document.getElementById("compStyle"),
@@ -3892,10 +3902,10 @@
         const dot = document.createElementNS("http://www.w3.org/2000/svg","circle");
         dot.setAttribute("cx", String(x));
         dot.setAttribute("cy", String(y));
-        dot.setAttribute("r", isRoot ? "9" : "8");
+        dot.setAttribute("r", isRoot ? "12" : "10");
         dot.setAttribute("fill", isRoot ? "var(--good)" : "var(--chord)");
         dot.setAttribute("stroke", isRoot ? "rgba(255,255,255,.85)" : "rgba(0,0,0,.55)");
-        dot.setAttribute("stroke-width", isRoot ? "2.2" : "1.4");
+        dot.setAttribute("stroke-width", isRoot ? "2.4" : "1.6");
         svg.appendChild(dot);
       }
     }
@@ -5171,6 +5181,7 @@
       tempo: state.tempo,
       swing: state.swing,
       chaos: state.chaos,
+      complexity: state.complexity,
       rootMode: state.rootMode,
       progressionLogic: state.progressionLogic,
       genrePreset: state.genrePreset,
@@ -5211,7 +5222,7 @@
 
     Object.assign(state, {
       bars: s.bars, halfEnabled:s.halfEnabled, halfDensity:s.halfDensity,
-      tempo:s.tempo, swing:s.swing, chaos:s.chaos,
+      tempo:s.tempo, swing:s.swing, chaos:s.chaos, complexity: s.complexity ?? state.complexity,
       rootMode:s.rootMode, progressionLogic:s.progressionLogic, genrePreset:s.genrePreset,
       grooveStyle:s.grooveStyle, compStyle:s.compStyle,
       bassPreset:s.bassPreset, keysPreset:s.keysPreset, drumsPreset:s.drumsPreset,
@@ -5987,14 +5998,10 @@
       // no, keep it stable
     }
 
-    if (!state.lockLimiters){
-      randomizeLimitersOnly();
-    }
+    applyComplexityMacro(state.complexity);
 
     // generator knobs
     if (!state.lockProg){
-      state.scalesUsed = randBetween(1, 32);
-      state.chaos = randBetween(0, 100);
       // pick logic some
       state.progressionLogic = pick(Object.keys(PROGRESSION_LOGICS));
       generateChart();
@@ -6112,6 +6119,111 @@
     numEl.addEventListener("change", pullNum);
   }
 
+  function syncComplexityUI(){
+    const c = clamp(Number(state.complexity)||0, 0, 100);
+    let msg = "Balanced: moderate density + scales.";
+    if (c <= 0) msg = "Simple: no splits or extensions.";
+    else if (c < 34) msg = "Simpler: fewer splits, scales, extensions.";
+    else if (c >= 67) msg = "Complex: denser, more scales + extensions.";
+    if (E.complexityMsg) E.complexityMsg.textContent = msg;
+    if (E.complexity) E.complexity.title = msg;
+  }
+
+  function applyComplexityMacro(value){
+    const raw = clamp(Number(value)||0, 0, 100);
+    const c = raw / 100;
+    const roll = (p)=> chance(clamp(p, 0, 1));
+
+    if (!state.lockStyle){
+      const jitter = (Math.random() - 0.5) * 16 * c;
+      state.chaos = clamp(Math.round(6 + c*88 + jitter), 0, 100);
+    }
+
+    if (!state.lockTime){
+      if (c <= 0){
+        state.halfEnabled = false;
+        state.halfDensity = 0;
+      } else {
+        state.halfEnabled = roll(c * 0.9);
+        if (state.halfEnabled){
+          const densityBase = 6 + c * 70;
+          const densityJitter = (Math.random() - 0.5) * 14 * c;
+          state.halfDensity = clamp(Math.round(densityBase + densityJitter), 0, 100);
+        } else {
+          state.halfDensity = 0;
+        }
+      }
+    }
+
+    if (!state.lockProg){
+      const maxScale = state.scaleLimitEnabled ? 18 : 28;
+      if (c <= 0){
+        state.scalesUsed = 1;
+      } else {
+        const t = Math.random();
+        const exp = 1 + Math.abs(c - 0.5) * 4;
+        const curve = (c < 0.5)
+          ? Math.pow(t, exp)
+          : 1 - Math.pow(1 - t, exp);
+        const target = 1 + Math.round(curve * (maxScale - 1));
+        state.scalesUsed = clamp(target, 1, 32);
+      }
+    }
+
+    if (!state.lockLimiters){
+      const lim = {...state.limiter};
+
+      if (c <= 0){
+        lim.qMaj7 = true;
+        lim.qMin7 = true;
+        lim.qDom7 = true;
+        lim.qDim7 = false;
+        lim.qHalfDim = false;
+        lim.qSus = false;
+        lim.qMinMaj = false;
+
+        lim.x9 = false;
+        lim.x11 = false;
+        lim.x13 = false;
+        lim.x6 = false;
+        lim.xAdd9 = false;
+        lim.xSharp11 = false;
+        lim.xMin11 = false;
+
+        lim.tSlash = false;
+        lim.tB9 = false;
+        lim.tSharp9 = false;
+        lim.tChrom = false;
+        lim.tAlt = false;
+      } else {
+        lim.qMaj7 = true;
+        lim.qMin7 = true;
+        lim.qDom7 = true;
+        lim.qDim7 = roll(c * 0.35);
+        lim.qHalfDim = roll(c * 0.55);
+        lim.qSus = roll(c * 0.45);
+        lim.qMinMaj = roll(c * 0.25);
+
+        lim.x9 = roll(c * 0.9);
+        lim.x11 = roll(c * 0.75);
+        lim.x13 = roll(c * 0.7);
+        lim.x6 = roll(c * 0.8);
+        lim.xAdd9 = roll(c * 0.6);
+        lim.xSharp11 = roll(c * 0.5);
+        lim.xMin11 = roll(c * 0.45);
+
+        lim.tSlash = roll(c * 0.7);
+        lim.tB9 = roll(c * 0.55);
+        lim.tSharp9 = roll(c * 0.5);
+        lim.tChrom = roll(c * 0.4);
+        lim.tAlt = roll(c * 0.35);
+      }
+
+      state.limiter = lim;
+      setChordLimiterState(lim);
+    }
+  }
+
   function syncScaleLimiterUI(){
     if (!E.scalesUsedMsg) return;
     if (state.scaleLimitEnabled){
@@ -6137,6 +6249,9 @@
 
     E.chaos.value = String(state.chaos);
     E.chaosNum.value = String(state.chaos);
+
+    if (E.complexity) E.complexity.value = String(state.complexity);
+    syncComplexityUI();
 
     E.rootMode.value = state.rootMode;
 
@@ -6292,6 +6407,7 @@
         tempo: state.tempo,
         swing: state.swing,
         chaos: state.chaos,
+        complexity: state.complexity,
         rootMode: state.rootMode,
         progressionLogic: state.progressionLogic,
         genrePreset: state.genrePreset,
@@ -6354,6 +6470,7 @@
       tempo: saved.tempo ?? state.tempo,
       swing: saved.swing ?? state.swing,
       chaos: saved.chaos ?? state.chaos,
+      complexity: saved.complexity ?? state.complexity,
       rootMode: saved.rootMode ?? state.rootMode,
       progressionLogic: saved.progressionLogic ?? state.progressionLogic,
       genrePreset: saved.genrePreset ?? state.genrePreset,
@@ -6460,6 +6577,14 @@
     bindRangePair(E.tempo, E.tempoNum, (v)=>{ state.tempo=v; saveAll(); });
     bindRangePair(E.swing, E.swingNum, (v)=>{ state.swing=v; saveAll(); });
     bindRangePair(E.chaos, E.chaosNum, (v)=>{ state.chaos=v; saveAll(); });
+    if (E.complexity){
+      E.complexity.addEventListener("input", ()=>{
+        const v = Number(E.complexity.value || 0);
+        state.complexity = v;
+        syncComplexityUI();
+        saveAll();
+      });
+    }
     bindRangePair(E.scalesUsed, E.scalesUsedNum, (v)=>{
       state.scalesUsed=v;
       assignChordModesWithLimit(state.chartBars);
