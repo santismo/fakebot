@@ -6608,8 +6608,55 @@
     saveAll();
   }
 
+  function isTypingField(target){
+    const el = target;
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+  }
+
   /* ---------- Bind UI events ---------- */
   function bindUI(){
+    document.addEventListener("keydown", (ev)=>{
+      if (ev.defaultPrevented) return;
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (isTypingField(ev.target)) return;
+
+      switch (ev.code){
+        case "Space":
+          ev.preventDefault();
+          if (E.btnPlay) E.btnPlay.click();
+          break;
+        case "KeyG":
+          ev.preventDefault();
+          if (E.btnGenerate) E.btnGenerate.click();
+          break;
+        case "ArrowLeft":
+          ev.preventDefault();
+          if (E.btnUndo) E.btnUndo.click();
+          break;
+        case "ArrowRight":
+          ev.preventDefault();
+          if (E.btnRedo) E.btnRedo.click();
+          break;
+        case "KeyR":
+          ev.preventDefault();
+          if (E.btnRandomAll) E.btnRandomAll.click();
+          break;
+        case "KeyT":
+          ev.preventDefault();
+          if (E.btnStyleRand) E.btnStyleRand.click();
+          break;
+        case "KeyC":
+          ev.preventDefault();
+          if (E.btnCopy) E.btnCopy.click();
+          break;
+        case "KeyD":
+          ev.preventDefault();
+          if (E.btnDefaults) E.btnDefaults.click();
+          break;
+      }
+    });
     // ranges
     bindRangePair(E.bars, E.barsNum, (v)=>{ state.bars=v; saveAll(); });
     bindRangePair(E.halfDensity, E.halfDensityNum, (v)=>{ state.halfDensity=v; saveAll(); });
