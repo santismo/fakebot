@@ -4833,7 +4833,10 @@
         best = c;
       }
     });
-    const tol = opts.triplet ? ticksPerBeat / 6 : ticksPerBeat / 4;
+    const tolBase = opts.triplet ? ticksPerBeat / 6 : ticksPerBeat / 4;
+    const tol = (opts.grid && Number.isFinite(opts.grid))
+      ? Math.max(tolBase, opts.grid * 0.45)
+      : tolBase;
     if (best && bestDiff <= tol) return best;
     return null;
   }
@@ -4971,7 +4974,7 @@
         return n;
       };
 
-      const single = pickSingleDuration(noteTicks, ticksPerBeat, { triplet: useTripletGrid });
+      const single = pickSingleDuration(noteTicks, ticksPerBeat, { triplet: useTripletGrid, grid });
       if (single){
         tickables.push(makeNote(single, startTicks));
         return;
@@ -4985,8 +4988,7 @@
         return n;
       });
       parts.forEach(p=>tickables.push(p));
-      const hasFlagged = durations.some(part => part.dur.includes("8") || part.dur.includes("16") || part.dur.includes("32"));
-      if (parts.length > 1 && !hasFlagged){
+      if (parts.length > 1){
         for (let i=0;i<parts.length-1;i++){
           const tie = new Vex.Flow.StaveTie({ first_note: parts[i], last_note: parts[i+1] });
           if (direction != null){
@@ -5154,7 +5156,7 @@
         const voice = new VF.Voice({ num_beats: beatsPerBar, beat_value: beatValue });
         voice.setMode(VF.Voice.Mode.SOFT);
         voice.addTickables(tickables);
-        const beamables = tickables.filter(n => n && typeof n.isRest === "function");
+        const beamables = tickables.filter(n => n && typeof n.isRest === "function" && !n.isRest());
         const groups = (VF.Fraction) ? [new VF.Fraction(1, beatValue)] : undefined;
         const beams = VF.Beam.generateBeams(beamables, {
           groups,
