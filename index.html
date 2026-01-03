@@ -4710,10 +4710,6 @@
   }
 
   function renderLeadSheet(){
-    if (state.biabActive){
-      if (E.sheet) E.sheet.innerHTML = "";
-      return;
-    }
     E.sheet.innerHTML = "";
     for (let b=0;b<state.chartBars.length;b++){
       const bar = state.chartBars[b];
@@ -5078,7 +5074,6 @@
     if (!E.melodyWrap || !E.melodySheet) return;
     const show = !!state.biabActive;
     E.melodyWrap.classList.toggle("on", show);
-    if (E.sheet) E.sheet.style.display = show ? "none" : "";
     E.melodySheet.classList.toggle("biabSheet", show);
     if (!show){
       E.melodySheet.innerHTML = "";
@@ -5579,30 +5574,43 @@
     }
 
     const ch = activeChord();
-    if (!ch){
-      E.pianoSvg.innerHTML = "";
-      E.pianoTop.textContent = "—";
-      E.pianoHint.textContent = "—";
-      return;
-    }
-
-    const prev = (state.activeBar>0) ? (state.chartBars[state.activeBar-1]?.chords?.slice(-1)[0] || null) : null;
-    const next = (state.activeBar<state.chartBars.length-1) ? (state.chartBars[state.activeBar+1]?.chords?.[0] || null) : null;
-
-    const {pcs: scalePCs, mode} = scalePCsForChordLocal(ch, prev, next);
-    const chordPCs = chordTonesPCs(ch);
     const melodyPcs = getActiveMelodyPcs();
+    let scalePCs = [];
+    let chordPCs = [];
+    let scaleRoot = null;
+    let mode = state.keyMode || "ionian";
+    let chordRoot = null;
+    let needWide = false;
 
-    const scaleRoot = (ch && typeof ch.scaleRoot==="number") ? ch.scaleRoot : ch.root;
-    E.pianoTop.textContent = chordName(ch);
-    E.pianoHint.textContent = `Scale: ${noteName(scaleRoot)} ${mode} · Keyboard: ${state.kbOct} oct.`;
+    if (ch){
+      const prev = (state.activeBar>0) ? (state.chartBars[state.activeBar-1]?.chords?.slice(-1)[0] || null) : null;
+      const next = (state.activeBar<state.chartBars.length-1) ? (state.chartBars[state.activeBar+1]?.chords?.[0] || null) : null;
+      const scaleInfo = scalePCsForChordLocal(ch, prev, next);
+      scalePCs = scaleInfo.pcs || [];
+      mode = scaleInfo.mode || mode;
+      chordPCs = chordTonesPCs(ch);
+      scaleRoot = (typeof ch.scaleRoot==="number") ? ch.scaleRoot : ch.root;
+      chordRoot = ch.root;
+      needWide = (ch.intervals?.length||0) >= 5;
+      E.pianoTop.textContent = chordName(ch);
+      E.pianoHint.textContent = `Scale: ${noteName(scaleRoot)} ${mode} · Keyboard: ${state.kbOct} oct.`;
+    } else {
+      const keyMode = SCALES[state.keyMode] ? state.keyMode : "ionian";
+      mode = keyMode;
+      scaleRoot = Number.isFinite(state.keyRoot) ? state.keyRoot : 0;
+      scalePCs = (SCALES[keyMode] || []).map(i=>pc(scaleRoot + i));
+      chordPCs = [];
+      chordRoot = null;
+      needWide = false;
+      E.pianoTop.textContent = `Key: ${noteName(scaleRoot)} ${mode}`;
+      E.pianoHint.textContent = `Keyboard: ${state.kbOct} oct.`;
+    }
 
     const svg = E.pianoSvg;
     svg.innerHTML = "";
 
     const W = 1000, H = 240;
     const baseOct = clamp(Number(state.kbOct)||2, 1, 4);
-    const needWide = (ch.intervals?.length||0) >= 5;
     const oct = clamp(needWide ? Math.max(baseOct, 3) : baseOct, 1, 4);
     const whiteKeyCount = 7 * oct;
     const whiteW = W / whiteKeyCount;
@@ -5636,7 +5644,7 @@
       svg.appendChild(rect);
 
       const isChord = chordPCs.includes(p);
-      const isRoot = p === pc(ch.root);
+      const isRoot = chordRoot != null && p === pc(chordRoot);
       if (isChord){
         placeMarker(svg, k.x + whiteW*0.5, 175, isRoot ? "root" : "chord");
       }
@@ -5668,7 +5676,7 @@
         svg.appendChild(rect);
 
         const isChord = chordPCs.includes(p);
-        const isRoot = p === pc(ch.root);
+        const isRoot = chordRoot != null && p === pc(chordRoot);
         if (isChord){
           placeMarker(svg, x0 + blackW*0.5, 95, isRoot ? "root" : "chord");
         }
