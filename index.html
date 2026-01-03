@@ -5114,6 +5114,7 @@
     E.melodySheet.innerHTML = "";
     const totalBars = bars.length;
     const rowCount = Math.ceil(totalBars / barsPerRow);
+    let pendingTieOuts = null;
     for (let r=0;r<rowCount;r++){
       const rowWrap = document.createElement("div");
       rowWrap.className = "biabRow";
@@ -5683,8 +5684,14 @@
     renderKeyLine();
     renderSongRandomLabel();
     renderLeadSheet();
-    renderMelodySheet();
     renderPianoForActive();
+    try{
+      renderMelodySheet();
+    } catch (err){
+      console.warn("Melody render failed", err);
+      if (E.melodySheet) E.melodySheet.innerHTML = "";
+      setMelodyStatus("Melody render failed.");
+    }
   }
 
   /* ---------- SoundFont mappings ---------- */
